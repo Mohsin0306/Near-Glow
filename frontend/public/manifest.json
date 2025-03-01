@@ -1,0 +1,46 @@
+{
+  "short_name": "Perfume Store",
+  "name": "Perfume Store - Your Fragrance Destination",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "icons/notification-icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable notification"
+    },
+    {
+      "src": "icons/badge-icon.png",
+      "type": "image/png",
+      "sizes": "48x48",
+      "purpose": "badge"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff",
+  "gcm_sender_id": "103953800507",
+  "permissions": [
+    "notifications",
+    "wake-lock",
+    "background-sync"
+  ],
+  "notification_handlers": ["*"],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "orientation": "any",
+  "categories": ["shopping"],
+  "shortcuts": [
+    {
+      "name": "Notifications",
+      "url": "/alerts/notifications",
+      "icons": [{ "src": "/notification-icon.png", "sizes": "192x192" }]
+    }
+  ],
+  "android_package_name": "com.perfumestore.app"
+}
