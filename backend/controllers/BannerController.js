@@ -18,11 +18,11 @@ exports.createBanner = async (req, res) => {
     const uploadResult = await uploadToCloudinary(file, mediaType === 'video');
 
     const banner = new Banner({
-      title,
-      description,
-      buttonText,
-      buttonLink,
-      order: order || 0,
+      title: title || '',
+      description: description || '',
+      buttonText: buttonText || '',
+      buttonLink: buttonLink || '',
+      order: parseInt(order) || 0,
       media: {
         public_id: uploadResult.public_id,
         url: uploadResult.url,

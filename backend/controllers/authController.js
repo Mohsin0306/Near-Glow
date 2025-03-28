@@ -2,72 +2,95 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Buyer = require('../models/Buyer');
 const Seller = require('../models/Seller');
+const crypto = require('crypto');
+
+// Add the generateReferralCode function at the top of the file
+const generateReferralCode = async (length = 8) => {
+  let code;
+  let isUnique = false;
+  
+  while (!isUnique) {
+    code = crypto.randomBytes(length).toString('hex').toUpperCase().slice(0, length);
+    const existingBuyer = await Buyer.findOne({ referralCode: code });
+    if (!existingBuyer) {
+      isUnique = true;
+    }
+  }
+  
+  return code;
+};
 
 // Buyer Registration
 exports.registerBuyer = async (req, res) => {
   try {
-    const { 
-      username,
-      name, 
-      phoneNumber
-    } = req.body;
+    const { username, name, phoneNumber, referralCode } = req.body;
+    console.log('Received registration data:', { username, name, phoneNumber, referralCode }); // Debug log
 
-    // Check if buyer exists by username or phone only
-    let buyerExists = await Buyer.findOne({ 
-      $or: [
-        { username },
-        { phoneNumber }
-      ]
+    // Check if user already exists
+    const existingUser = await Buyer.findOne({ 
+      $or: [{ username }, { phoneNumber }] 
     });
-    
-    if (buyerExists) {
-      return res.status(400).json({ 
+
+    if (existingUser) {
+      return res.status(400).json({
         success: false,
-        message: buyerExists.phoneNumber === phoneNumber ? 
-          'Phone number already registered' : 
-          'Username already taken'
+        message: 'Username or phone number already exists'
       });
     }
 
-    // Create new buyer with only required fields
+    // Create new buyer
     const buyer = new Buyer({
       username,
       name,
-      phoneNumber,
-      role: 'user'
+      phoneNumber
     });
 
-    // Save buyer
-    await buyer.save();
+    // Generate unique referral code for new user
+    buyer.referralCode = await generateReferralCode();
 
-    // Create token
+    // If referral code provided, process it
+    if (referralCode) {
+      console.log('Processing referral code:', referralCode);
+      const referrer = await Buyer.findOne({ referralCode });
+      if (referrer) {
+        console.log('Found referrer:', referrer._id);
+        buyer.referredBy = referrer._id;
+        
+        // Only increment total referrals count, no coins
+        await Buyer.findByIdAndUpdate(referrer._id, {
+          $inc: { totalReferrals: 1 }
+        });
+      }
+    }
+
+    await buyer.save();
+    console.log('New buyer saved:', buyer._id); // Debug log
+
+    // Generate JWT token
     const token = jwt.sign(
-      { 
-        id: buyer._id, 
-        type: 'buyer',
-        username: buyer.username,
-        role: 'user'
-      },
+      { id: buyer._id },
       process.env.JWT_SECRET,
-      { expiresIn: '1d' }
+      { expiresIn: '30d' }
     );
 
-    res.status(201).json({ 
+    res.status(201).json({
       success: true,
       token,
       user: {
-        id: buyer._id,
+        _id: buyer._id,
         username: buyer.username,
         name: buyer.name,
         phoneNumber: buyer.phoneNumber,
-        role: 'user'
+        role: buyer.role,
+        referralCode: buyer.referralCode
       }
     });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Registration failed'
+      message: 'Error during registration',
+      error: error.message
     });
   }
 };
@@ -121,6 +144,81 @@ exports.login = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+};
+
+// Add this new endpoint for Seller Registration
+exports.registerSeller = async (req, res) => {
+  try {
+    const { 
+      username,
+      name,
+      email,
+      password,
+      phoneNumber,
+      businessDetails
+    } = req.body;
+
+    // Check if seller exists
+    let sellerExists = await Seller.findOne({ 
+      $or: [
+        { username },
+        { email },
+        { phoneNumber }
+      ]
+    });
+    
+    if (sellerExists) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Seller already exists'
+      });
+    }
+
+    // Create new seller
+    const seller = new Seller({
+      username,
+      name,
+      email,
+      password,
+      phoneNumber,
+      businessDetails,
+      isAdmin: true
+    });
+
+    // Save seller
+    await seller.save();
+
+    // Create token
+    const token = jwt.sign(
+      { 
+        id: seller._id,
+        type: 'seller',
+        username: seller.username,
+        isAdmin: true
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: seller._id,
+        username: seller.username,
+        name: seller.name,
+        email: seller.email,
+        phoneNumber: seller.phoneNumber,
+        isAdmin: true
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Registration failed'
     });
   }
 }; 

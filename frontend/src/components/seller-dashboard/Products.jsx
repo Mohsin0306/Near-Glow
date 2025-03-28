@@ -6,6 +6,7 @@ import { createAPI, cartAPI } from '../../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
+import ProductActionModal from '../common/ProductActionModal';
 
 const Products = ({ selectedCategories, setSelectedCategories }) => {
   const { currentTheme } = useTheme();
@@ -31,7 +32,14 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
           id: p._id,
           title: p.name,
           description: p.description,
-          price: parseFloat(p.price),
+          price: parseFloat(p.price || 0),
+          marketPrice: parseFloat(p.marketPrice || 0),
+          salePrice: parseFloat(p.salePrice || 0),
+          deliveryPrice: parseFloat(p.deliveryPrice || 0),
+          discountPercentage: p.discountPercentage || 
+            (p.marketPrice && p.salePrice 
+              ? Math.round(((p.marketPrice - p.salePrice) / p.marketPrice) * 100)
+              : 0),
           image: p.media?.[0]?.url || 'https://via.placeholder.com/300x300?text=Product+Image',
           category: p.category?.name || 'Uncategorized',
           subcategories: Array.isArray(p.subcategories) 
@@ -52,26 +60,31 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
           orderCount: p.orderCount || 0,
           viewCount: p.viewCount || 0,
           lastViewedAt: p.lastViewedAt ? new Date(p.lastViewedAt) : null,
-          trendingScore: p.trendingScore || 0
+          trendingScore: p.trendingScore || 0,
+          // Add colors properly
+          colors: Array.isArray(p.colors) ? p.colors.map(color => ({
+            name: color.name,
+            media: color.media || [],
+            _id: color._id
+          })) : []
         });
 
-        // Transform all products from different sections
-        const allProducts = [
-          ...(response.data.data.topSales || []).map(transformProduct),
-          ...(response.data.data.trending || []).map(transformProduct),
-          ...(response.data.data.newArrivals || []).map(transformProduct)
-        ];
-
-        // Remove duplicates based on id
+        // Get unique products
         const uniqueProducts = Array.from(
-          new Map(allProducts.map(item => [item.id, item])).values()
+          new Map(
+            [
+              ...(response.data.data.topSales || []),
+              ...(response.data.data.trending || []),
+              ...(response.data.data.newArrivals || [])
+            ].map(item => [item._id, item])
+          ).values()
         );
 
-        setProducts(uniqueProducts);
+        setProducts(uniqueProducts.map(transformProduct));
       }
+      setProductsLoading(false);
     } catch (error) {
       console.error('Error fetching products:', error);
-    } finally {
       setProductsLoading(false);
     }
   };
@@ -270,6 +283,11 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
 
   // Product Card Component with smaller size
   const ProductCard = ({ product, currentTheme, wishlistItems }) => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedColor, setSelectedColor] = useState(null);
+    const [selectedMedia, setSelectedMedia] = useState(0);
+    const [quantity, setQuantity] = useState(1);
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { user } = useAuth();
     const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -283,6 +301,41 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
         setIsInWishlist(wishlistItems?.some(item => item._id === product.id));
       }
     }, [wishlistItems, product.id, user]);
+
+    // Handle color selection
+    const handleColorSelect = (color) => {
+      setSelectedColor(color);
+      
+      if (color.media && color.media.length > 0) {
+        const mainProductMedia = product.media.filter(item => 
+          !product.colors?.some(c => 
+            c.media?.some(m => m.url === item.url)
+          )
+        );
+        
+        product.media = [...color.media, ...mainProductMedia];
+        setSelectedMedia(0);
+      }
+    };
+
+    // Set initial color when modal opens
+    useEffect(() => {
+      if (isModalOpen && product?.colors?.length > 0) {
+        const initialColor = product.colors[0];
+        setSelectedColor(initialColor);
+        
+        if (initialColor.media?.length > 0) {
+          const mainProductMedia = product.media.filter(item => 
+            !product.colors.some(c => 
+              c.media?.some(m => m.url === item.url)
+            )
+          );
+          
+          product.media = [...initialColor.media, ...mainProductMedia];
+          setSelectedMedia(0);
+        }
+      }
+    }, [isModalOpen, product]);
 
     const handleProductClick = (e) => {
       // Don't navigate if clicking wishlist/cart buttons
@@ -308,7 +361,7 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
         setIsAddingToWishlist(true);
         const token = localStorage.getItem('authToken');
         
-        const response = await fetch('http://192.168.100.17:5000/api/wishlist/add', {
+        const response = await fetch('https://api.nearglow.com/api/wishlist/add', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -332,160 +385,205 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
       }
     };
 
-    const handleAddToCart = async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      if (product.stock <= 0) {
-        toast.error('Product is out of stock');
+    const handleAddToCart = async () => {
+      if (!user) {
+        toast.error('Please login to add items to cart');
+        navigate('/login');
         return;
       }
+      setIsModalOpen(true);
+    };
 
-      if (!user) {
-        toast.error('Please login to add to cart');
+    const handleCartAction = async () => {
+      if (product?.colors?.length > 0 && !selectedColor) {
+        toast.error('Please select a color');
         return;
       }
 
       try {
-        setIsAddingToCart(true);
+        setLoading(true);
         const token = localStorage.getItem('authToken');
-        
-        const response = await cartAPI.addToCart(product.id, token);
-        
-        if (response.data.success) {
-          setIsAdded(true);
-          toast.success('Added to cart');
-          setTimeout(() => setIsAdded(false), 2000);
-        }
+        await cartAPI.addToCart({
+          productId: product.id,
+          quantity,
+          colorId: selectedColor?._id,
+        }, token);
+        toast.success('Added to cart successfully');
+        setIsModalOpen(false);
       } catch (error) {
-        console.error('Error adding to cart:', error);
-        toast.error('Failed to add to cart');
+        toast.error(error.response?.data?.message || 'Error adding to cart');
       } finally {
-        setIsAddingToCart(false);
+        setLoading(false);
       }
     };
 
-    return (
-      <div 
-        onClick={handleProductClick}
-        className={`w-44 rounded-xl overflow-hidden shadow-lg transition-all duration-300 cursor-pointer ${
-          currentTheme === 'dark' 
-            ? 'bg-gray-800 hover:bg-gray-750' 
-            : currentTheme === 'eyeCare'
-            ? 'bg-[#E6D5BC] hover:bg-[#E6D5BC]/90'
-            : 'bg-white hover:bg-white/90'
-        }`}
-      >
-        <div className="relative aspect-square">
-          <img 
-            src={product.media?.[0]?.url || 'https://via.placeholder.com/300x300?text=Product+Image'}
-            alt={product.title}
-            className="w-full h-full object-cover"
-          />
-          {/* Wishlist and Cart buttons */}
-          <div className="absolute top-2 right-2 flex gap-1.5">
-            <button 
-              className={`p-1.5 rounded-full shadow-lg transform transition-all duration-300 
-                ${isAddingToWishlist ? 'scale-90' : 'hover:scale-110'}
-                ${isInWishlist 
-                  ? currentTheme === 'dark'
-                    ? 'bg-red-500 text-white hover:bg-red-600'
-                    : currentTheme === 'eyeCare'
-                    ? 'bg-[#FF6B6B] text-white hover:bg-[#FF5252]'
-                    : 'bg-red-500 text-white hover:bg-red-600'
-                  : currentTheme === 'dark'
-                  ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
-                  : 'bg-white/90 hover:bg-white text-gray-700'
-                }`}
-              onClick={handleAddToWishlist}
-              disabled={isAddingToWishlist}
-            >
-              {isInWishlist ? (
-                <RiHeartFill 
-                  className={`w-3.5 h-3.5 transition-colors duration-300
-                    ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
-                />
-              ) : (
-                <RiHeartLine 
-                  className={`w-3.5 h-3.5 transition-colors duration-300
-                    ${isAddingToWishlist ? 'animate-pulse' : ''}`}
-                />
-              )}
-            </button>
+    // Transform product colors for modal
+    const transformedProduct = {
+      ...product,
+      colors: product.colors?.map(color => ({
+        _id: color._id,
+        name: color.name,
+        media: color.media || []
+      })) || []
+    };
 
-            <button 
-              className={`p-1.5 rounded-full shadow-lg transform transition-all duration-300 
-                ${isAddingToCart ? 'scale-90' : 'hover:scale-110'}
-                ${isAdded 
-                  ? currentTheme === 'dark'
-                    ? 'bg-green-500 text-white hover:bg-green-600'
+    return (
+      <>
+        <div 
+          onClick={handleProductClick}
+          className={`w-32 md:w-44 rounded-xl overflow-hidden shadow-lg transition-all duration-300 cursor-pointer ${
+            currentTheme === 'dark' 
+              ? 'bg-gray-800 hover:bg-gray-750' 
+              : currentTheme === 'eyeCare'
+              ? 'bg-[#E6D5BC] hover:bg-[#E6D5BC]/90'
+              : 'bg-white hover:bg-white/90'
+          }`}
+        >
+          <div className="relative aspect-square">
+            <img 
+              src={product.image}
+              alt={product.title}
+              className="w-full h-full object-cover"
+            />
+            {/* Discount badge */}
+            {product.discountPercentage > 0 && (
+              <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] md:text-xs px-1.5 py-0.5 rounded-md font-medium">
+                -{product.discountPercentage}%
+              </div>
+            )}
+            {/* Wishlist and Cart buttons */}
+            <div className="absolute top-2 right-2 flex gap-1.5">
+              <button 
+                className={`p-1.5 rounded-full shadow-lg transform transition-all duration-300 
+                  ${isAddingToWishlist ? 'scale-90' : 'hover:scale-110'}
+                  ${isInWishlist 
+                    ? currentTheme === 'dark'
+                      ? 'bg-red-500 text-white hover:bg-red-600'
+                      : currentTheme === 'eyeCare'
+                      ? 'bg-[#FF6B6B] text-white hover:bg-[#FF5252]'
+                      : 'bg-red-500 text-white hover:bg-red-600'
+                    : currentTheme === 'dark'
+                    ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
                     : currentTheme === 'eyeCare'
-                    ? 'bg-[#68D391] text-white hover:bg-[#48BB78]'
-                    : 'bg-green-500 text-white hover:bg-green-600'
-                  : currentTheme === 'dark'
-                  ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
-                  : 'bg-white/90 hover:bg-white text-gray-700'
-                }`}
-              onClick={handleAddToCart}
-              disabled={isAddingToCart}
-            >
-              {isAdded ? (
-                <RiCheckLine 
-                  className={`w-3.5 h-3.5 transition-colors duration-300
-                    ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
-                />
-              ) : (
-                <RiShoppingCart2Line 
-                  className={`w-3.5 h-3.5 transition-colors duration-300
-                    ${isAddingToCart ? 'animate-pulse' : ''}`}
-                />
-              )}
-            </button>
-          </div>
-          {product.stock <= 0 && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <span className="text-white text-xs font-medium px-2 py-0.5 rounded-full bg-red-500">
-                Out
-              </span>
+                    ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
+                    : 'bg-white/90 hover:bg-white text-gray-700'
+                  }`}
+                onClick={handleAddToWishlist}
+                disabled={isAddingToWishlist}
+              >
+                {isInWishlist ? (
+                  <RiHeartFill 
+                    className={`w-3.5 h-3.5 transition-colors duration-300
+                      ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
+                  />
+                ) : (
+                  <RiHeartLine 
+                    className={`w-3.5 h-3.5 transition-colors duration-300
+                      ${isAddingToWishlist ? 'animate-pulse' : ''}`}
+                  />
+                )}
+              </button>
+
+              <button 
+                className={`p-1.5 rounded-full shadow-lg transform transition-all duration-300 
+                  ${isAddingToCart ? 'scale-90' : 'hover:scale-110'}
+                  ${isAdded 
+                    ? currentTheme === 'dark'
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : currentTheme === 'eyeCare'
+                      ? 'bg-[#68D391] text-white hover:bg-[#48BB78]'
+                      : 'bg-green-500 text-white hover:bg-green-600'
+                    : currentTheme === 'dark'
+                    ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
+                    : currentTheme === 'eyeCare'
+                    ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
+                    : 'bg-white/90 hover:bg-white text-gray-700'
+                  }`}
+                onClick={handleAddToCart}
+                disabled={isAddingToCart}
+              >
+                {isAdded ? (
+                  <RiCheckLine 
+                    className={`w-3.5 h-3.5 transition-colors duration-300
+                      ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
+                  />
+                ) : (
+                  <RiShoppingCart2Line 
+                    className={`w-3.5 h-3.5 transition-colors duration-300
+                      ${isAddingToCart ? 'animate-pulse' : ''}`}
+                  />
+                )}
+              </button>
             </div>
-          )}
-          {product.status === 'draft' && (
-            <div className="absolute top-2 left-2">
-              <span className="text-white text-xs font-medium px-2 py-0.5 rounded-full bg-gray-500">
-                Draft
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="p-2">
-          <div className="h-5 mb-0.5">
-            <h3 className="text-xs font-semibold truncate" title={product.title}>
-              {product.title}
-            </h3>
-          </div>
-          <div className="flex items-center justify-between mb-0.5">
-            <p className="text-sm font-bold">Rs {product.price.toLocaleString('en-PK')}</p>
-            {product.rating.count > 0 && (
-              <div className="flex items-center gap-1">
-                <RiStarFill className="text-yellow-400" size={12} />
-                <span className="text-xs opacity-60">{product.rating.rate.toFixed(1)}</span>
+            {product.stock <= 0 && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <span className="text-white text-xs font-medium px-2 py-0.5 rounded-full bg-red-500">
+                  Out
+                </span>
+              </div>
+            )}
+            {product.status === 'draft' && (
+              <div className="absolute top-2 left-2">
+                <span className="text-white text-xs font-medium px-2 py-0.5 rounded-full bg-gray-500">
+                  Draft
+                </span>
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] ${
-              product.stock > 0 ? 'text-green-500' : 'text-red-500'
-            }`}>
-              {product.stock > 0 ? `${product.stock} in stock` : 'Out'}
-            </span>
-            <span className="text-[10px] opacity-60">{product.category}</span>
+          <div className="p-1.5 md:p-2">
+            <h3 className="text-[11px] md:text-xs font-semibold truncate mb-1">
+              {product.title}
+            </h3>
+            {/* Price row */}
+            <div className="flex items-center gap-1.5">
+              {/* Sale Price */}
+              <p className="text-xs md:text-sm font-bold text-red-500">
+                Rs {(product.salePrice || product.price).toLocaleString()}
+              </p>
+              {/* Market Price with strikethrough */}
+              {product.marketPrice > product.salePrice && (
+                <p className="text-[10px] md:text-xs text-gray-400 line-through">
+                  Rs {product.marketPrice.toLocaleString()}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-between mt-1">
+              <span className={`text-[8px] md:text-[10px] ${
+                product.stock > 0 ? 'text-green-500' : 'text-red-500'
+              }`}>
+                {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
+              </span>
+              {product.rating?.rate > 0 && (
+                <div className="flex items-center gap-0.5">
+                  <RiStarFill className="text-yellow-400" size={10} />
+                  <span className="text-[9px] md:text-xs opacity-60">
+                    {product.rating.rate.toFixed(1)}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+
+        {/* Product Action Modal with Color Selection */}
+        <ProductActionModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedColor(null);
+            setQuantity(1);
+          }}
+          product={transformedProduct}
+          selectedColor={selectedColor}
+          onColorSelect={handleColorSelect}
+          quantity={quantity}
+          setQuantity={setQuantity}
+          onAction={handleCartAction}
+          loading={loading}
+          currentTheme={currentTheme}
+          mode="cart"
+        />
+      </>
     );
   };
 
@@ -502,7 +600,7 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
 
         try {
           const token = localStorage.getItem('authToken');
-          const response = await fetch('http://192.168.100.17:5000/api/wishlist', {
+          const response = await fetch('https://api.nearglow.com/api/wishlist', {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -520,19 +618,19 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
     }, [user]);
 
     return (
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-3">
+      <div className="mb-3 md:mb-6">
+        <div className="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-3">
           {section.icon}
-          <h2 className="text-xl font-semibold">{section.name}</h2>
-          <span className="text-sm opacity-60">({section.products.length} items)</span>
+          <h2 className="text-base md:text-xl font-semibold">{section.name}</h2>
+          <span className="text-[10px] md:text-sm opacity-60">({section.products.length} items)</span>
         </div>
         <div className="relative">
-          <div className={`product-scroll overflow-x-auto pb-4 ${
+          <div className={`product-scroll overflow-x-auto pb-2 md:pb-4 ${
             currentTheme === 'dark' ? 'dark-theme' 
             : currentTheme === 'eyeCare' ? 'eye-care-theme'
             : 'light-theme'
           }`}>
-            <div className="flex gap-3 min-w-full">
+            <div className="flex gap-1.5 md:gap-3 min-w-full">
               {section.products.map(product => (
                 <div key={product.id} className="flex-shrink-0">
                   <ProductCard 
@@ -678,12 +776,13 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
 
   if (productsLoading) {
     return (
-      <div className={`p-4 sm:p-6 ${
+      <div className={`min-h-screen ${
         currentTheme === 'dark' ? 'bg-gray-900 text-white' 
         : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3] text-[#433422]'
         : 'bg-gray-50 text-gray-900'
       }`}>
-        <div className="max-w-7xl mx-auto">
+        <div dangerouslySetInnerHTML={{ __html: scrollbarStyles }} />
+        <div className="max-w-7xl mx-auto p-4 sm:p-6">
           {[1, 2, 3].map((i) => (
             <LoadingSection key={i} />
           ))}
@@ -693,7 +792,7 @@ const Products = ({ selectedCategories, setSelectedCategories }) => {
   }
 
   return (
-    <div className={`${
+    <div className={`min-h-screen ${
       currentTheme === 'dark' ? 'bg-gray-900 text-white' 
       : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3] text-[#433422]'
       : 'bg-gray-50 text-gray-900'

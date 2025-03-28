@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { singleUploadMiddleware } = require('../middleware/upload');
+const { bannerUploadMiddleware } = require('../middleware/upload');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const {
@@ -14,8 +14,8 @@ const {
 router.get('/', getBanners);
 
 // Admin routes
-router.post('/', auth, adminAuth, singleUploadMiddleware, createBanner);
-router.put('/:id', auth, adminAuth, singleUploadMiddleware, updateBanner);
+router.post('/', auth, adminAuth, bannerUploadMiddleware, createBanner);
+router.put('/:id', auth, adminAuth, bannerUploadMiddleware, updateBanner);
 router.delete('/:id', auth, adminAuth, deleteBanner);
 
 module.exports = router;

@@ -1,5 +1,18 @@
 const mongoose = require('mongoose');
 
+const savedAddressSchema = new mongoose.Schema({
+  firstName: String,
+  lastName: String,
+  email: String,
+  phone: String,
+  address: String,
+  city: String,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 const buyerSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -84,7 +97,37 @@ const buyerSchema = new mongoose.Schema({
     orderUpdates: { type: Boolean, default: true },
     promotions: { type: Boolean, default: false },
     priceAlerts: { type: Boolean, default: true }
-  }
+  },
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Buyer'
+  },
+  referralCoins: {
+    type: Number,
+    default: 0
+  },
+  totalReferrals: {
+    type: Number,
+    default: 0
+  },
+  referralHistory: [{
+    referredUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Buyer'
+    },
+    coinsEarned: Number,
+    orderAmount: Number,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  savedAddresses: [savedAddressSchema]
 }, {
   timestamps: true
 });

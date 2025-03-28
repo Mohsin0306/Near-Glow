@@ -5,102 +5,37 @@ const webpush = require('web-push');
 const PushSubscription = require('../models/PushSubscription');
 
 // Create notification for multiple users
-const createNotification = async (recipients, type, title, message, data = {}, sender = null) => {
+const createNotification = async (notificationData) => {
   try {
-    // Filter recipients based on their notification preferences
-    const allowedRecipients = [];
-    for (const recipientId of recipients) {
-      const buyer = await Buyer.findById(recipientId);
-      if (buyer && buyer.notificationPreferences) {
-        // Check notification type against user preferences
-        const shouldNotify = (() => {
-          switch (type) {
-            case 'ORDER_STATUS':
-            case 'NEW_ORDER':
-              return buyer.notificationPreferences.orderUpdates;
-            case 'PRICE_DROP':
-              return buyer.notificationPreferences.priceAlerts;
-            case 'PROMOTION':
-              return buyer.notificationPreferences.promotions;
-            default:
-              return true; // For other notification types, default to sending
-          }
-        })();
-
-        if (shouldNotify) {
-          allowedRecipients.push(recipientId);
-        }
-      }
-    }
-
-    // If no recipients want this notification type, return early
-    if (allowedRecipients.length === 0) {
-      return [];
-    }
-
-    // Create notifications only for users who haven't disabled them
-    const notifications = await Notification.insertMany(
-      allowedRecipients.map(recipient => ({
-        recipient,
-        sender,
+    const { recipient, recipients, type, title, message, data } = notificationData;
+    
+    // Handle both single recipient and multiple recipients
+    const notificationRecipients = recipients || (recipient ? [recipient] : []);
+    
+    // Create notifications for each recipient
+    for (const recipientId of notificationRecipients) {
+      const notification = new Notification({
+        recipient: recipientId,
         type,
         title,
         message,
         data
-      }))
-    );
-
-    // Send notifications through socket and push only to allowed recipients
-    for (const notification of notifications) {
-      try {
-        const notificationData = {
-          _id: notification._id,
-          type: notification.type,
-          title: notification.title,
-          message: notification.message,
-          data: notification.data,
-          createdAt: notification.createdAt,
-          senderId: sender,
-          recipientId: notification.recipient
-        };
-
-        // Emit socket notification
-        await emitNotification(notification.recipient.toString(), notificationData, sender?.toString());
-
-        // Send push notification only if user hasn't disabled this type
-        const subscriptions = await PushSubscription.find({
-          userId: notification.recipient
+      });
+      
+      await notification.save();
+      
+      // Emit socket event if needed
+      if (global.io) {
+        global.io.to(recipientId.toString()).emit('notification', {
+          type,
+          title,
+          message,
+          data
         });
-
-        for (const sub of subscriptions) {
-          try {
-            await webpush.sendNotification(
-              sub.subscription,
-              JSON.stringify({
-                ...notificationData,
-                timestamp: Date.now(),
-                priority: 'high',
-                vibrate: [200, 100, 200],
-                requireInteraction: true,
-                actions: [
-                  { action: 'open', title: 'Open' },
-                  { action: 'close', title: 'Close' }
-                ]
-              })
-            );
-          } catch (error) {
-            if (error.statusCode === 410) {
-              await PushSubscription.deleteOne({ _id: sub._id });
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Error processing notification for recipient ${notification.recipient}:`, error);
-        continue;
       }
     }
-
-    return notifications;
+    
+    return { success: true };
   } catch (error) {
     console.error('Error creating notifications:', error);
     throw error;
@@ -114,14 +49,73 @@ const getUserNotifications = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const filter = req.query.filter || 'all';
     const search = req.query.search || '';
+    const isAdmin = req.query.isAdmin === 'true';
 
-    // Get user's notification preferences
+    // For admin users, we don't need to check buyer preferences
+    if (isAdmin) {
+      let query = {};
+
+      // Apply filters
+      if (filter === 'unread') {
+        query.isRead = false;
+      }
+
+      // Apply search
+      if (search) {
+        query.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { message: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      const notifications = await Notification.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('sender', 'name username profilePicture businessDetails')
+        .populate('recipient', 'name username profilePicture')
+        .lean();
+
+      const formattedNotifications = notifications.map(notification => ({
+        _id: notification._id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        isRead: notification.isRead,
+        createdAt: notification.createdAt,
+        sender: notification.sender ? {
+          ...notification.sender,
+          name: notification.sender.businessDetails?.companyName || notification.sender.name
+        } : null,
+        recipient: notification.recipient,
+        data: notification.data
+      }));
+
+      return res.json({
+        success: true,
+        notifications: formattedNotifications,
+        page,
+        hasMore: notifications.length === limit
+      });
+    }
+
+    // For regular users, continue with existing logic
     const buyer = await Buyer.findById(req.user.id);
-    if (!buyer || !buyer.notificationPreferences) {
+    if (!buyer) {
       return res.status(404).json({
         success: false,
-        message: 'Buyer preferences not found'
+        message: 'Buyer not found'
       });
+    }
+
+    // Initialize preferences if they don't exist
+    if (!buyer.notificationPreferences) {
+      buyer.notificationPreferences = {
+        orderUpdates: true,
+        promotions: false,
+        priceAlerts: true
+      };
+      await buyer.save();
     }
 
     let query = { recipient: req.user.id };
@@ -139,38 +133,6 @@ const getUserNotifications = async (req, res) => {
       ];
     }
 
-    // Filter notifications based on user preferences
-    query.$or = [];
-    
-    if (buyer.notificationPreferences.orderUpdates) {
-      query.$or.push({ type: { $in: ['ORDER_STATUS', 'NEW_ORDER'] } });
-    }
-    
-    if (buyer.notificationPreferences.priceAlerts) {
-      query.$or.push({ type: 'PRICE_DROP' });
-    }
-    
-    if (buyer.notificationPreferences.promotions) {
-      query.$or.push({ type: 'PROMOTION' });
-    }
-
-    // Always show admin messages and other types
-    query.$or.push({ 
-      type: { 
-        $nin: ['ORDER_STATUS', 'NEW_ORDER', 'PRICE_DROP', 'PROMOTION'] 
-      } 
-    });
-
-    // If no preferences are enabled, still show critical notifications
-    if (query.$or.length === 1) {
-      query = {
-        $and: [
-          { recipient: req.user.id },
-          query.$or[0]
-        ]
-      };
-    }
-
     const notifications = await Notification.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -178,17 +140,15 @@ const getUserNotifications = async (req, res) => {
       .populate('sender', 'name username profilePicture')
       .lean();
 
-    // Format notifications for frontend
     const formattedNotifications = notifications.map(notification => ({
       _id: notification._id,
       title: notification.title,
       message: notification.message,
       type: notification.type,
-      read: notification.isRead,
+      isRead: notification.isRead,
       createdAt: notification.createdAt,
       sender: notification.sender,
-      data: notification.data,
-      color: getNotificationColor(notification.type)
+      data: notification.data
     }));
 
     res.json({
@@ -201,7 +161,8 @@ const getUserNotifications = async (req, res) => {
     console.error('Error fetching notifications:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching notifications'
+      message: 'Error fetching notifications',
+      error: error.message
     });
   }
 };
@@ -224,14 +185,19 @@ const getNotificationColor = (type) => {
 // Mark notification as read
 const markAsRead = async (req, res) => {
   try {
+    let query = { _id: req.params.id };
+    
+    // If not admin, only allow marking own notifications
+    if (!req.user.isAdmin) {
+      query.recipient = req.user.id;
+    }
+
     const notification = await Notification.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        recipient: req.user.id
-      },
+      query,
       { isRead: true },
       { new: true }
-    );
+    ).populate('sender', 'name username profilePicture businessDetails')
+     .populate('recipient', 'name username profilePicture');
 
     if (!notification) {
       return res.status(404).json({
@@ -240,11 +206,25 @@ const markAsRead = async (req, res) => {
       });
     }
 
+    // Format the response
+    const formattedNotification = {
+      ...notification.toObject(),
+      sender: notification.sender ? {
+        ...notification.sender.toObject(),
+        name: notification.sender.businessDetails?.companyName || notification.sender.name
+      } : null,
+      recipient: notification.recipient ? {
+        ...notification.recipient.toObject(),
+        name: notification.recipient.name
+      } : null
+    };
+
     res.json({
       success: true,
-      notification
+      notification: formattedNotification
     });
   } catch (error) {
+    console.error('Error marking notification as read:', error);
     res.status(500).json({
       success: false,
       message: 'Error marking notification as read',
@@ -256,16 +236,21 @@ const markAsRead = async (req, res) => {
 // Mark all notifications as read
 const markAllAsRead = async (req, res) => {
   try {
-    await Notification.updateMany(
-      { recipient: req.user.id },
-      { isRead: true }
-    );
+    let query = {};
+    
+    // If not admin, only mark own notifications
+    if (!req.user.isAdmin) {
+      query.recipient = req.user.id;
+    }
+
+    await Notification.updateMany(query, { isRead: true });
 
     res.json({
       success: true,
       message: 'All notifications marked as read'
     });
   } catch (error) {
+    console.error('Error marking all notifications as read:', error);
     res.status(500).json({
       success: false,
       message: 'Error marking notifications as read',

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RiEditLine, RiArrowLeftLine, RiLoader4Line, RiStore2Line, RiPriceTag3Line, RiCheckboxCircleLine, RiMoneyDollarCircleLine, RiSaveLine, RiCloseLine, RiZoomInLine, RiArrowLeftSLine, RiArrowRightSLine, RiPlayCircleLine, RiPauseCircleLine, RiShoppingCart2Line, RiHeartLine, RiHeartFill, RiShareLine, RiSubtractLine } from 'react-icons/ri';
+import { RiEditLine, RiArrowLeftLine, RiLoader4Line, RiStore2Line, RiPriceTag3Line, RiCheckboxCircleLine, RiMoneyDollarCircleLine, RiSaveLine, RiCloseLine, RiZoomInLine, RiArrowLeftSLine, RiArrowRightSLine, RiPlayCircleLine, RiPauseCircleLine, RiShoppingCart2Line, RiHeartLine, RiHeartFill, RiShareLine, RiSubtractLine, RiTruckLine, RiAddLine, RiShoppingCartLine, RiShoppingBag3Line } from 'react-icons/ri';
 import { useTheme } from '../../context/ThemeContext';
-import { createAPI, productAPI } from '../../utils/api';
+import { createAPI, productAPI, cartAPI } from '../../utils/api';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useMediaQuery } from '@mui/material';
 import { useSwipeable } from 'react-swipeable';
 import axios from 'axios';
+import ProductActionModal from '../common/ProductActionModal';
 
 const imageVariants = {
   enter: { opacity: 0, scale: 1.1 },
@@ -43,6 +44,10 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
   const [addingToCart, setAddingToCart] = useState(false);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [isAddingToWishlist, setIsAddingToWishlist] = useState(false);
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [selectedColorImages, setSelectedColorImages] = useState([]);
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+  const [bottomSheetMode, setBottomSheetMode] = useState('cart'); // 'cart' or 'buy'
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => {
@@ -136,7 +141,9 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
       // Add basic product details
       formData.append('name', editedProduct.name);
       formData.append('description', editedProduct.description);
-      formData.append('price', Number(editedProduct.price));
+      formData.append('marketPrice', Number(editedProduct.marketPrice));
+      formData.append('salePrice', Number(editedProduct.salePrice));
+      formData.append('deliveryPrice', Number(editedProduct.deliveryPrice));
       formData.append('stock', Number(editedProduct.stock));
       formData.append('brand', editedProduct.brand);
       formData.append('category', editedProduct.category._id || editedProduct.category);
@@ -276,47 +283,146 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
     handleVideoInteraction();
   }, [isPlaying]);
 
+  const handleBuyNow = async () => {
+    if (!isAuthenticated) {
+      toast.error('Please login to continue');
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      // Make sure we have the product ID
+      const productId = product._id;
+      
+      // Check if product has colors
+      const hasColors = product.colors && product.colors.length > 0;
+      
+      // Prepare color data for API
+      let colorId = null;
+      if (hasColors && selectedColor) {
+        colorId = selectedColor._id;
+      }
+      
+      console.log('Validating direct purchase with:', {
+        productId,
+        quantity,
+        colorId,
+        hasToken: !!token
+      });
+      
+      // Validate the purchase first
+      const validateResponse = await cartAPI.validateDirectPurchase({
+        productId,
+        quantity,
+        colorId
+      }, token);
+      
+      console.log('Validate response:', validateResponse.data);
+      
+      if (validateResponse.data.success) {
+        // Close the bottom sheet if it's open
+        setIsBottomSheetOpen(false);
+        
+        // Get the product details from the response
+        const productDetails = validateResponse.data.directPurchaseDetails.product;
+        const amounts = validateResponse.data.directPurchaseDetails.amounts;
+        
+        // Navigate to the correct route with user ID
+        navigate(`/${user._id}/direct-checkout`, {
+          state: {
+            product: {
+              ...productDetails,
+              quantity: quantity,
+              selectedColor: selectedColor,
+              id: productId
+            },
+            subtotal: amounts.subtotal,
+            shipping: amounts.deliveryPrice,
+            colorId: colorId
+          }
+        });
+      } else {
+        toast.error(validateResponse.data.message || 'Unable to process purchase');
+      }
+    } catch (error) {
+      console.error('Buy now error:', error);
+      toast.error(error.response?.data?.message || 'Error processing your request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
       toast.error('Please login to add to cart');
+      navigate('/login', { state: { from: location } });
       return;
     }
 
     try {
       setAddingToCart(true);
-      const api = createAPI(token);  // Create API with token
-      const response = await api.post('/cart/add', {
-        productId: product._id,
-        quantity: quantity
-      });
+      
+      // Get the token from localStorage
+      const token = localStorage.getItem('authToken');
+      
+      // Check if product has colors and if a color is selected
+      const hasColors = product.colors && product.colors.length > 0;
+      
+      // Don't send color data if product doesn't have colors
+      let colorData = null;
+      
+      if (hasColors) {
+        // If product has colors but no color is selected, use the first color
+        if (!selectedColor && product.colors.length > 0) {
+          setSelectedColor(product.colors[0]);
+          colorData = product.colors[0];
+        } else {
+          colorData = selectedColor;
+        }
+      }
+
+      // Check if product with same color exists
+      const existingItem = cartItems?.find(item => 
+        item.product._id === product._id && 
+        ((!colorData && !item.selectedColor) || 
+         (item.selectedColor?._id === colorData?._id))
+      );
+
+      let response;
+      if (existingItem) {
+        // Update quantity if same product and color exists
+        response = await cartAPI.updateCartItem(
+          existingItem._id, // Use the cart item ID
+          {
+            quantity: existingItem.quantity + quantity,
+            selectedColor: hasColors && colorData ? colorData._id : null
+          },
+          token
+        );
+      } else {
+        // Add new item
+        response = await cartAPI.addToCart({
+          productId: product._id,
+          quantity,
+          selectedColor: hasColors && colorData ? colorData._id : null
+        }, token);
+      }
 
       if (response.data.success) {
-        setIsAdded(true);
-        toast.success('Added to cart successfully');
-        fetchCartData(); // Refresh cart data
-        
-        setTimeout(() => {
-          setIsAdded(false);
-        }, 2000);
+        toast.success(response.data.message);
+        await fetchCartData();
+        setIsBottomSheetOpen(false);
       }
     } catch (error) {
       console.error('Error adding to cart:', error);
+      toast.error(error.response?.data?.message || 'Failed to add to cart');
     } finally {
       setAddingToCart(false);
-    }
-  };
-
-  const handleBuyNow = async () => {
-    if (!isAuthenticated) {
-      toast.error('Please login to proceed with purchase');
-      return;
-    }
-
-    try {
-      await handleAddToCart();
-      navigate('/checkout');
-    } catch (error) {
-      toast.error('Failed to proceed to checkout');
     }
   };
 
@@ -520,7 +626,7 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
                 : 'bg-gray-100 border-gray-200 text-gray-600'
             }`}
           >
-            -
+            <RiSubtractLine size={18} />
           </motion.button>
           <div className={`px-4 py-2 border-t border-b ${
             currentTheme === 'dark'
@@ -542,85 +648,80 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
                 : 'bg-gray-100 border-gray-200 text-gray-600'
             }`}
           >
-            +
+            <RiAddLine size={18} />
           </motion.button>
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-4">
+      {/* Action Buttons with Animation - Fixed layout */}
+      <div className="flex items-center gap-3">
         <motion.button
           whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleAddToCart}
-          disabled={addingToCart || isAdded || !product?.stock}
-          className={`flex-1 h-[52px] rounded-xl font-medium relative overflow-hidden
-            ${addingToCart || isAdded ? 'bg-white text-black' : 'bg-black hover:bg-gray-900 text-white'}
-            ${!product?.stock ? 'opacity-50 cursor-not-allowed' : ''}
-            transition-all duration-300 flex items-center justify-center`}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => {
+            setBottomSheetMode('cart');
+            setIsBottomSheetOpen(true);
+          }}
+          disabled={loading || !product?.stock}
+          className={`flex-1 h-11 px-4 rounded-xl font-medium relative overflow-hidden whitespace-nowrap
+            ${currentTheme === 'dark'
+              ? 'bg-gray-800 text-white hover:bg-gray-700'
+              : currentTheme === 'eyeCare'
+              ? 'bg-[#E6D5B8] text-[#433422] hover:bg-[#E6D5B8]/90'
+              : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+            } ${loading || !product?.stock ? 'opacity-50 cursor-not-allowed' : ''}
+            transition-all duration-300`}
         >
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center"
-            initial={false}
-            animate={{
-              opacity: addingToCart ? 1 : 0,
-              scale: addingToCart ? 1 : 0.8,
-            }}
-            transition={{ duration: 0.2 }}
-          >
-            <RiLoader4Line className="w-6 h-6 animate-spin" />
-          </motion.div>
-
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center"
-            initial={false}
-            animate={{
-              opacity: isAdded ? 1 : 0,
-              scale: isAdded ? 1 : 0.8,
-            }}
-            transition={{ duration: 0.2 }}
-          >
-            <RiCheckboxCircleLine className="w-6 h-6" />
-          </motion.div>
-
           <motion.div
             className="flex items-center justify-center gap-2"
             initial={false}
             animate={{
-              opacity: !addingToCart && !isAdded ? 1 : 0,
-              scale: !addingToCart && !isAdded ? 1 : 0.8,
+              opacity: loading ? 0 : 1,
+              y: loading ? 20 : 0
             }}
             transition={{ duration: 0.2 }}
           >
-            <RiShoppingCart2Line className="w-5 h-5" />
-            <span>Add to Cart • ₨ {(product?.price * quantity).toLocaleString()}</span>
+            <RiShoppingCartLine size={18} />
+            <span className="text-sm">Add to Cart</span>
           </motion.div>
         </motion.button>
-        
+
         <motion.button
           whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleBuyNow}
-          className={`flex-1 px-6 py-3 rounded-xl text-white shadow-lg 
-            transition-all duration-200 ${
-            currentTheme === 'eyeCare' 
-              ? 'bg-[#5C4934] hover:bg-[#433422] shadow-[#433422]/20' 
-              : currentTheme === 'dark'
-              ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-900/20'
-              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
-          }`}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => {
+            setBottomSheetMode('buy');
+            setIsBottomSheetOpen(true);
+          }}
+          disabled={loading || !product?.stock}
+          className={`flex-1 h-11 px-4 rounded-xl font-medium relative overflow-hidden whitespace-nowrap
+            ${currentTheme === 'dark'
+              ? 'bg-white text-gray-900 hover:bg-gray-100'
+              : currentTheme === 'eyeCare'
+              ? 'bg-[#433422] text-[#F5E6D3] hover:bg-[#433422]/90'
+              : 'bg-gray-900 text-white hover:bg-gray-800'
+            } ${loading || !product?.stock ? 'opacity-50 cursor-not-allowed' : ''}
+            transition-all duration-300`}
         >
-          Buy Now
+          <motion.div
+            className="flex items-center justify-center gap-2"
+            initial={false}
+            animate={{
+              opacity: loading ? 0 : 1,
+              scale: loading ? 1 : 0.8,
+            }}
+            transition={{ duration: 0.2 }}
+          >
+            <RiShoppingBag3Line size={18} />
+            <span className="text-sm">Buy Now</span>
+          </motion.div>
         </motion.button>
       </div>
     </div>
   );
 
-  const renderMedia = () => {
-    const currentMedia = product?.media?.[selectedMedia];
-    if (!currentMedia) return null;
-
-    if (currentMedia.type === 'video') {
+  const renderMedia = (media) => {
+    if (media.type === 'video') {
       return (
         <div 
           className="relative w-full h-full flex items-center justify-center"
@@ -629,9 +730,9 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
         >
           <video
             ref={videoRef}
-            src={product.media[selectedMedia].url}
+            src={media.url}
             className="w-full h-full object-contain"
-            poster={product.media[selectedMedia].thumbnail}
+            poster={media.thumbnail}
             playsInline
             preload="metadata"
             onClick={handleVideoPlay}
@@ -698,7 +799,7 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -50 }}
         transition={{ duration: 0.2 }}
-        src={currentMedia.url}
+        src={media.url}
         alt={product?.name}
         className="w-full h-full object-contain"
       />
@@ -737,104 +838,52 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
     <motion.div
       initial={{ y: 100 }}
       animate={{ y: 0 }}
-      className={`fixed bottom-0 left-0 right-0 z-50 p-4 ${
-        currentTheme === 'dark'
-          ? 'bg-gray-800/95 border-t border-gray-700'
-          : currentTheme === 'eyeCare'
-          ? 'bg-[#FFF8ED]/95 border-t border-[#E6D5B8]'
-          : 'bg-white/95 border-t border-gray-200'
+      className={`fixed bottom-0 left-0 right-0 px-4 py-3 z-50 ${
+        currentTheme === 'dark' 
+          ? 'bg-gray-900/95 border-t border-gray-800' 
+          : currentTheme === 'eyeCare' 
+          ? 'bg-[#F5E6D3]/95 border-t border-[#D4C3AA]'
+          : 'bg-white/95 border-t border-gray-100'
       } backdrop-blur-lg`}
     >
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-4">
-          {/* Quantity Controls */}
-          <div className="flex items-center">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setQuantity(q => Math.max(1, q - 1))}
-              className={`p-2 rounded-l-xl border ${
-                currentTheme === 'dark'
-                  ? 'bg-gray-700 border-gray-600 text-white'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-white border-[#E6D5B8] text-[#433422]'
-                  : 'bg-gray-100 border-gray-200 text-gray-600'
-              } ${quantity <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <RiSubtractLine size={18} />
-            </motion.button>
-            <div className={`px-4 py-2 border-t border-b ${
-              currentTheme === 'dark'
-                ? 'bg-gray-700 border-gray-600 text-white'
-                : currentTheme === 'eyeCare'
-                ? 'bg-white border-[#E6D5B8] text-[#433422]'
-                : 'bg-white border-gray-200 text-gray-900'
-            }`}>
-              {quantity}
-            </div>
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setQuantity(q => Math.min(product?.stock || 1, q + 1))}
-              className={`p-2 rounded-r-xl border ${
-                currentTheme === 'dark'
-                  ? 'bg-gray-700 border-gray-600 text-white'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-white border-[#E6D5B8] text-[#433422]'
-                  : 'bg-gray-100 border-gray-200 text-gray-600'
-              }`}
-            >
-              +
-            </motion.button>
-          </div>
+      <div className="flex items-center gap-3">
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setBottomSheetMode('cart');
+            setIsBottomSheetOpen(true);
+          }}
+          disabled={loading || !product.stock}
+          className={`flex-1 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-1.5 ${
+            currentTheme === 'dark'
+              ? 'bg-gray-800 text-white'
+              : currentTheme === 'eyeCare'
+              ? 'bg-[#E6D5B8] text-[#433422]'
+              : 'bg-gray-100 text-gray-900'
+          } ${loading || !product.stock ? 'opacity-50' : ''}`}
+        >
+          <RiShoppingCartLine size={18} />
+          <span className="text-sm">Add to Cart</span>
+        </motion.button>
 
-          {/* Add to Cart Button with Price */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleAddToCart}
-            disabled={addingToCart || isAdded || !product?.stock}
-            className={`flex-1 h-[52px] rounded-xl font-medium relative overflow-hidden
-              ${addingToCart || isAdded ? 'bg-white text-black' : 'bg-black hover:bg-gray-900 text-white'}
-              ${!product?.stock ? 'opacity-50 cursor-not-allowed' : ''}
-              transition-all duration-300 flex items-center justify-center`}
-          >
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center"
-              initial={false}
-              animate={{
-                opacity: addingToCart ? 1 : 0,
-                scale: addingToCart ? 1 : 0.8,
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              <RiLoader4Line className="w-6 h-6 animate-spin" />
-            </motion.div>
-
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center"
-              initial={false}
-              animate={{
-                opacity: isAdded ? 1 : 0,
-                scale: isAdded ? 1 : 0.8,
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              <RiCheckboxCircleLine className="w-6 h-6" />
-            </motion.div>
-
-            <motion.div
-              className="flex items-center justify-center gap-2"
-              initial={false}
-              animate={{
-                opacity: !addingToCart && !isAdded ? 1 : 0,
-                scale: !addingToCart && !isAdded ? 1 : 0.8,
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              <RiShoppingCart2Line className="w-5 h-5" />
-              <span>Add to Cart • ₨ {(product?.price * quantity).toLocaleString()}</span>
-            </motion.div>
-          </motion.button>
-        </div>
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setBottomSheetMode('buy');
+            setIsBottomSheetOpen(true);
+          }}
+          disabled={loading || !product.stock}
+          className={`flex-1 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-1.5 ${
+            currentTheme === 'dark'
+              ? 'bg-white text-gray-900'
+              : currentTheme === 'eyeCare'
+              ? 'bg-[#433422] text-[#F5E6D3]'
+              : 'bg-gray-900 text-white'
+          } ${loading || !product.stock ? 'opacity-50' : ''}`}
+        >
+          <RiShoppingBag3Line size={18} />
+          <span className="text-sm">Buy Now</span>
+        </motion.button>
       </div>
     </motion.div>
   );
@@ -847,146 +896,117 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
         : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
         : 'bg-white'
       } shadow-lg`}>
-        {/* Product Title, Price, and Wishlist */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <h1 className={`text-3xl font-bold ${
+        {/* Title */}
+        <h1 className={`text-2xl font-bold mb-4 ${
+          currentTheme === 'dark' ? 'text-white' 
+          : currentTheme === 'eyeCare' ? 'text-[#433422]'
+          : 'text-gray-900'
+        }`}>
+          {product?.name}
+        </h1>
+
+        {/* Price Section */}
+        <div className="flex flex-col gap-2 mb-4">
+          <div className="flex items-baseline gap-3">
+            <div className={`text-3xl font-bold ${
               currentTheme === 'dark' ? 'text-white' 
               : currentTheme === 'eyeCare' ? 'text-[#433422]'
               : 'text-gray-900'
             }`}>
-              {product?.name}
-            </h1>
-            <div className={`mt-2 text-2xl font-bold ${
-              currentTheme === 'dark' ? 'text-white' 
-              : currentTheme === 'eyeCare' ? 'text-[#433422]'
-              : 'text-gray-900'
-            }`}>
-              ₨ {product?.price?.toLocaleString()}
+              RS {product?.salePrice?.toLocaleString()}
             </div>
+            <span className={`text-lg line-through ${
+              currentTheme === 'dark' ? 'text-gray-400' 
+              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+              : 'text-gray-500'
+            }`}>
+              RS {product?.marketPrice?.toLocaleString()}
+            </span>
           </div>
-          
-          {/* Wishlist Button */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleWishlistToggle}
-            disabled={isAddingToWishlist}
-            className={`p-3 rounded-xl transition-colors duration-300 ${
-              isInWishlist 
-                ? 'bg-red-50 text-red-500' 
-                : currentTheme === 'dark'
-                  ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                  : currentTheme === 'eyeCare'
-                    ? 'bg-[#E6D5BC] text-[#433422] hover:bg-[#D4C3AA]'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {isInWishlist ? (
-              <RiHeartFill className={`w-6 h-6 ${isAddingToWishlist ? 'animate-pulse' : ''}`} />
+          <div className={`text-sm ${
+            currentTheme === 'dark' ? 'text-gray-400' 
+            : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+            : 'text-gray-600'
+          }`}>
+            {product?.deliveryPrice > 0 
+              ? `+RS ${product.deliveryPrice.toLocaleString()} Delivery`
+              : 'Free Delivery'
+            }
+          </div>
+          <div className={`flex items-center gap-1.5 ${
+            product?.stock > 0 ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {product?.stock > 0 ? (
+              <>
+                <RiCheckboxCircleLine className="w-5 h-5" />
+                <span className="text-base font-semibold">{product.stock} in stock</span>
+              </>
             ) : (
-              <RiHeartLine className={`w-6 h-6 ${isAddingToWishlist ? 'animate-pulse' : ''}`} />
+              <>
+                <RiCloseLine className="w-5 h-5" />
+                <span className="text-base font-semibold">Out of stock</span>
+              </>
             )}
-          </motion.button>
+          </div>
         </div>
 
-        {/* Product Meta Info */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {/* Brand Info */}
-          <div className={`p-3 rounded-xl ${
-            currentTheme === 'dark' ? 'bg-gray-700/50' 
-            : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-            : 'bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <span className={`p-2 rounded-lg ${
-                currentTheme === 'dark' ? 'bg-gray-600' 
-                : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                : 'bg-black'
-              }`}>
-                <RiStore2Line className="w-5 h-5 text-white" />
-              </span>
-              <div>
-                <p className={`text-sm font-medium ${
-                  currentTheme === 'dark' ? 'text-gray-400' 
-                  : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                  : 'text-gray-600'
-                }`}>Brand</p>
-                <p className={`text-base font-semibold ${
+        {/* Colors Section - Moved here */}
+        {product?.colors && product.colors.length > 0 && (
+          <div className="mb-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-medium ${
                   currentTheme === 'dark' ? 'text-white' 
                   : currentTheme === 'eyeCare' ? 'text-[#433422]'
                   : 'text-gray-900'
-                }`}>{product?.brand}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Category */}
-          <div className={`p-3 rounded-xl ${
-            currentTheme === 'dark' ? 'bg-gray-700/50' 
-            : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-            : 'bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <span className={`p-2 rounded-lg ${
-                currentTheme === 'dark' ? 'bg-gray-600' 
-                : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                : 'bg-black'
-              }`}>
-                <RiPriceTag3Line className="w-5 h-5 text-white" />
-              </span>
-              <div>
-                <p className={`text-sm font-medium ${
-                  currentTheme === 'dark' ? 'text-gray-400' 
-                  : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                  : 'text-gray-600'
-                }`}>Category</p>
-                <p className={`text-base font-semibold ${
-                  currentTheme === 'dark' ? 'text-white' 
-                  : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                  : 'text-gray-900'
-                }`}>{product?.category?.name}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Stock Status */}
-          <div className={`p-3 rounded-xl ${
-            currentTheme === 'dark' ? 'bg-gray-700/50' 
-            : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-            : 'bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <span className={`p-2 rounded-lg ${
-                product?.stock > 0 ? 'bg-green-500' : 'bg-red-500'
-              }`}>
-                <RiCheckboxCircleLine className="w-5 h-5 text-white" />
-              </span>
-              <div>
-                <p className={`text-sm font-medium ${
-                  currentTheme === 'dark' ? 'text-gray-400' 
+                }`}>
+                  Color:
+                </span>
+                <span className={`text-sm ${
+                  currentTheme === 'dark' ? 'text-gray-300' 
                   : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
                   : 'text-gray-600'
                 }`}>
-                  Status
-                </p>
-                <p className={`text-base font-semibold ${
-                  product?.stock > 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {product?.stock > 0 ? 'In Stock' : 'Out of Stock'}
-                </p>
+                  {selectedColor?.name || product.colors[0].name}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {product.colors.map((color, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleColorSelect(color)}
+                    className={`group relative p-0.5 ${
+                      selectedColor?.name === color.name 
+                        ? 'ring-2 ring-blue-500 rounded-lg'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-0.5">
+                      <div
+                        className={`w-10 h-10 rounded-lg border ${
+                          color.name.toLowerCase() === 'white' 
+                            ? 'border-gray-300' 
+                            : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: color.name.toLowerCase() }}
+                      />
+                      <span className={`text-xs ${
+                        currentTheme === 'dark' ? 'text-gray-300' 
+                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                        : 'text-gray-600'
+                      }`}>
+                        {color.name}
+                      </span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Description */}
         <div className="mb-6">
-          <h3 className={`text-lg font-semibold mb-2 ${
-            currentTheme === 'dark' ? 'text-white' 
-            : currentTheme === 'eyeCare' ? 'text-[#433422]'
-            : 'text-gray-900'
-          }`}>Description</h3>
           <p className={`text-base leading-relaxed ${
             currentTheme === 'dark' ? 'text-gray-300' 
             : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
@@ -1039,7 +1059,10 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={handleAddToCart}
+            onClick={() => {
+              setBottomSheetMode('cart');
+              setIsBottomSheetOpen(true);
+            }}
             disabled={addingToCart || isAdded || !product?.stock}
             className={`flex-1 h-[52px] rounded-xl font-medium relative overflow-hidden
               ${addingToCart || isAdded ? 'bg-white text-black' : 'bg-black hover:bg-gray-900 text-white'}
@@ -1080,7 +1103,7 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
               transition={{ duration: 0.2 }}
             >
               <RiShoppingCart2Line className="w-5 h-5" />
-              <span>Add to Cart • ₨ {(product?.price * quantity).toLocaleString()}</span>
+              <span>Add to Cart • RS {((product?.salePrice * quantity) + (product?.deliveryPrice || 0)).toLocaleString()}</span>
             </motion.div>
           </motion.button>
         </div>
@@ -1135,6 +1158,305 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
     }
   };
 
+  // Add color selection handler
+  const handleColorSelect = (color) => {
+    console.log('Selected color:', color);
+    setSelectedColor(color);
+    
+    // Check if the color has media
+    if (color.media && color.media.length > 0) {
+      // Create a new array with color media
+      const colorMedia = [...color.media];
+      
+      // Get the main product media that doesn't belong to any color
+      const mainProductMedia = product.media.filter(item => 
+        !product.colors.some(c => 
+          c.media?.some(m => m.url === item.url)
+        )
+      );
+      
+      // Set the media state with color media first, then product media
+      setMediaState([...colorMedia, ...mainProductMedia]);
+      
+      // Reset to first image
+      setSelectedMedia(0);
+    } else {
+      // If no color media, revert to original product media
+      setMediaState(product.media);
+    }
+  };
+
+  // Fix for the initial color selection
+  useEffect(() => {
+    if (product?.colors?.length > 0 && product?._id) {
+      // Get the initial color
+      const initialColor = product.colors[0];
+      
+      // Set the selected color
+      setSelectedColor(initialColor);
+      
+      // Update media if the color has media
+      if (initialColor.media && initialColor.media.length > 0) {
+        // Create a new array with color media
+        const colorMedia = [...initialColor.media];
+        
+        // Get the main product media that doesn't belong to any color
+        const mainProductMedia = product.media.filter(item => 
+          !product.colors.some(c => 
+            c.media?.some(m => m.url === item.url)
+          )
+        );
+        
+        // Set the media state with color media first, then product media
+        setMediaState([...colorMedia, ...mainProductMedia]);
+        
+        // Reset to first image
+        setSelectedMedia(0);
+      }
+    }
+  }, [product?._id]); // Only run when product ID changes
+
+  const renderProductInfo = () => (
+    <div className="space-y-4">
+      {/* Basic Info Card */}
+      <div className={`p-4 rounded-xl ${
+        currentTheme === 'dark' ? 'bg-gray-800' 
+        : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+        : 'bg-white'
+      } shadow-lg`}>
+        {/* Price Section - Always at top for mobile */}
+        {isMobile && (
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold tracking-tight ${
+                currentTheme === 'dark' ? 'text-white' 
+                : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                : 'text-gray-900'
+              }`}>
+                RS {product?.salePrice?.toLocaleString()}
+              </span>
+              <span className={`text-base line-through ${
+                currentTheme === 'dark' ? 'text-gray-400' 
+                : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                : 'text-gray-500'
+              }`}>
+                RS {product?.marketPrice?.toLocaleString()}
+              </span>
+            </div>
+            <div className={`text-sm ${
+              currentTheme === 'dark' ? 'text-gray-400' 
+              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+              : 'text-gray-600'
+            }`}>
+              {product?.deliveryPrice > 0 
+                ? `+RS ${product.deliveryPrice.toLocaleString()} Delivery`
+                : 'Free Delivery'
+              }
+            </div>
+          </div>
+        )}
+
+        {/* Product Title */}
+        <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold mb-4 ${
+          currentTheme === 'dark' ? 'text-white' 
+          : currentTheme === 'eyeCare' ? 'text-[#433422]'
+          : 'text-gray-900'
+        }`}>
+          {product?.name}
+        </h1>
+
+        {/* Desktop Price Section */}
+        {!isMobile && (
+          <div className="flex flex-col gap-2 mb-4">
+            <div className="flex items-baseline gap-3">
+              <div className={`text-3xl font-bold ${
+                currentTheme === 'dark' ? 'text-white' 
+                : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                : 'text-gray-900'
+              }`}>
+                RS {product?.salePrice?.toLocaleString()}
+              </div>
+              <span className={`text-lg line-through ${
+                currentTheme === 'dark' ? 'text-gray-400' 
+                : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                : 'text-gray-500'
+              }`}>
+                RS {product?.marketPrice?.toLocaleString()}
+              </span>
+            </div>
+            <div className={`text-sm ${
+              currentTheme === 'dark' ? 'text-gray-400' 
+              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+              : 'text-gray-600'
+            }`}>
+              {product?.deliveryPrice > 0 
+                ? `+RS ${product.deliveryPrice.toLocaleString()} Delivery`
+                : 'Free Delivery'
+              }
+            </div>
+          </div>
+        )}
+
+        {/* Colors Section */}
+        {product?.colors && product.colors.length > 0 && (
+          <div className="mb-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-medium ${
+                  currentTheme === 'dark' ? 'text-white' 
+                  : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                  : 'text-gray-900'
+                }`}>
+                  Color:
+                </span>
+                <span className={`text-sm ${
+                  currentTheme === 'dark' ? 'text-gray-300' 
+                  : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                  : 'text-gray-600'
+                }`}>
+                  {selectedColor?.name || product.colors[0].name}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {product.colors.map((color, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleColorSelect(color)}
+                    className={`group relative p-0.5 ${
+                      selectedColor?.name === color.name 
+                        ? 'ring-2 ring-blue-500 rounded-lg'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-0.5">
+                      <div
+                        className={`w-10 h-10 rounded-lg border ${
+                          color.name.toLowerCase() === 'white' 
+                            ? 'border-gray-300' 
+                            : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: color.name.toLowerCase() }}
+                      />
+                      <span className={`text-xs ${
+                        currentTheme === 'dark' ? 'text-gray-300' 
+                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                        : 'text-gray-600'
+                      }`}>
+                        {color.name}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Description */}
+        <div className="mb-4">
+          <p className={`text-base leading-relaxed ${
+            currentTheme === 'dark' ? 'text-gray-300' 
+            : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+            : 'text-gray-600'
+          }`}>
+            {product?.description}
+          </p>
+        </div>
+
+        {/* Stock Status */}
+        <div className={`flex items-center gap-1.5 mb-4 ${
+          product?.stock > 0 ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {product?.stock > 0 ? (
+            <>
+              <RiCheckboxCircleLine className="w-4 h-4" />
+              <span className="text-sm font-semibold">{product.stock} in stock</span>
+            </>
+          ) : (
+            <>
+              <RiCloseLine className="w-4 h-4" />
+              <span className="text-sm font-semibold">Out of stock</span>
+            </>
+          )}
+        </div>
+
+        {/* Add to Cart Section for Desktop */}
+        {!isMobile && (
+          <div className="flex items-center gap-4">
+            {/* Quantity controls and Add to Cart button */}
+            {renderProductActions()}
+          </div>
+        )}
+      </div>
+
+      {/* Specifications Card */}
+      <div className={`p-4 rounded-xl ${
+        currentTheme === 'dark' ? 'bg-gray-800' 
+        : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+        : 'bg-white'
+      } shadow-lg`}>
+        <h3 className={`text-lg font-semibold mb-4 ${
+          currentTheme === 'dark' ? 'text-white' 
+          : currentTheme === 'eyeCare' ? 'text-[#433422]'
+          : 'text-gray-900'
+        }`}>
+          Specifications
+        </h3>
+        <div className="space-y-3">
+          {product?.specifications.map((spec, index) => (
+            <div key={index} className="space-y-1">
+              <dt className={`text-sm font-medium ${
+                currentTheme === 'dark' ? 'text-gray-400' 
+                : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                : 'text-gray-500'
+              }`}>
+                {spec.key}
+              </dt>
+              <dd className={`text-sm ${
+                currentTheme === 'dark' ? 'text-white' 
+                : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                : 'text-gray-900'
+              }`}>
+                {spec.value}
+              </dd>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Features Card */}
+      <div className={`p-4 rounded-xl ${
+        currentTheme === 'dark' ? 'bg-gray-800' 
+        : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+        : 'bg-white'
+      } shadow-lg`}>
+        <h3 className={`text-lg font-semibold mb-4 ${
+          currentTheme === 'dark' ? 'text-white' 
+          : currentTheme === 'eyeCare' ? 'text-[#433422]'
+          : 'text-gray-900'
+        }`}>
+          Features
+        </h3>
+        <ul className="space-y-3">
+          {product?.features.map((feature, index) => (
+            <li key={index} className={`flex items-start gap-3 ${
+              currentTheme === 'dark' ? 'text-gray-300' 
+              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+              : 'text-gray-600'
+            }`}>
+              <span className={`flex-shrink-0 mt-1 ${
+                currentTheme === 'eyeCare' 
+                  ? 'text-[#433422]' 
+                  : 'text-blue-500'
+              }`}>•</span>
+              <span className="text-base leading-relaxed">{feature}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1144,789 +1466,199 @@ const ProductDetails = ({ cartItems, setCartItems, fetchCartData, updateCart }) 
   }
 
   return (
-    <div className={`min-h-screen ${isMobile ? 'pb-24' : 'pb-6'} ${
-      currentTheme === 'dark' ? 'bg-gray-900' 
-      : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3]' 
-      : 'bg-gray-50'
-    }`}>
-      {isMobile && renderMobileHeader()}
-      <div className="max-w-7xl mx-auto pt-6 px-4 sm:px-6">
-        <div className={`${isMobile ? 'space-y-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-8'}`}>
-          <div className="space-y-6">
-            <div className="space-y-4">
-              <div 
-                {...swipeHandlers}
-                className={`relative ${
-                  isMobile 
-                    ? 'h-[calc(100vw-2rem)] max-h-[500px]' 
-                    : 'aspect-[4/3]'
-                } rounded-2xl overflow-hidden group`}
-              >
-                <div className={`absolute inset-0 ${
-                  currentTheme === 'dark' ? 'bg-gray-800/50' 
-                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]/50'
-                  : 'bg-white/50'
-                } backdrop-blur-sm`} />
-                
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={selectedMedia}
-                    variants={imageVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    className="relative w-full h-full"
-                  >
-                    {product?.media[selectedMedia]?.type === 'video' ? (
-                      <div 
-                        className="relative w-full h-full flex items-center justify-center"
-                        onMouseMove={handleVideoInteraction}
-                        onClick={handleVideoInteraction}
-                      >
-                        <video
-                          ref={videoRef}
-                          src={product.media[selectedMedia].url}
-                          className="w-full h-full object-contain"
-                          poster={product.media[selectedMedia].thumbnail}
-                          playsInline
-                          preload="metadata"
-                          onClick={handleVideoPlay}
-                          onTimeUpdate={handleVideoTimeUpdate}
-                          onLoadedMetadata={handleVideoLoadedMetadata}
-                          onEnded={handleVideoEnded}
-                        />
-
-                        {/* Video Controls Overlay */}
-                        <div 
-                          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
-                            showControls ? 'opacity-100' : 'opacity-0'
-                          }`}
-                        >
-                          {/* Play/Pause Button */}
-                          <button
-                            onClick={handleVideoPlay}
-                            className="p-4 rounded-full bg-black/40 hover:bg-black/60 transition-colors duration-200"
-                          >
-                            {isPlaying ? (
-                              <RiPauseCircleLine className="w-12 h-12 text-white" />
-                            ) : (
-                              <RiPlayCircleLine className="w-12 h-12 text-white" />
-                            )}
-                          </button>
-
-                          {/* Navigation Controls */}
-                          {product?.media?.length > 1 && (
-                            <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMedia(prev => 
-                                    prev === 0 ? product.media.length - 1 : prev - 1
-                                  );
-                                }}
-                                className="p-3 rounded-full backdrop-blur-md shadow-lg transform transition-all duration-200 bg-black/40 hover:bg-black/60 pointer-events-auto"
-                              >
-                                <RiArrowLeftSLine className="w-6 h-6 text-white" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMedia(prev => 
-                                    prev === product.media.length - 1 ? 0 : prev + 1
-                                  );
-                                }}
-                                className="p-3 rounded-full backdrop-blur-md shadow-lg transform transition-all duration-200 bg-black/40 hover:bg-black/60 pointer-events-auto"
-                              >
-                                <RiArrowRightSLine className="w-6 h-6 text-white" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <img
-                        src={product?.media[selectedMedia]?.url}
-                        alt={product?.name}
-                        className="w-full h-full object-contain"
-                      />
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* Image Counter - Show only on mobile */}
-                {isMobile && product?.media.length > 1 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 
-                      rounded-full text-sm font-medium backdrop-blur-md ${
-                      currentTheme === 'dark' 
-                        ? 'bg-black/40 text-white' 
-                        : currentTheme === 'eyeCare' 
-                        ? 'bg-[#433422]/30 text-[#433422]' 
-                        : 'bg-black/30 text-white'
-                    }`}
-                  >
-                    {selectedMedia + 1} / {product.media.length}
-                  </motion.div>
-                )}
-
-                {/* Zoom Button */}
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowZoom(true)}
-                  className={`absolute top-4 right-4 p-2.5 rounded-full backdrop-blur-md 
-                    shadow-lg transition-all duration-200 ${
-                    currentTheme === 'dark' 
-                      ? 'bg-black/40 hover:bg-black/60 text-white' 
-                      : currentTheme === 'eyeCare' 
-                      ? 'bg-[#433422]/30 hover:bg-[#433422]/40 text-[#433422]' 
-                      : 'bg-white/40 hover:bg-white/60 text-black'
-                    }`}
-                >
-                  <RiZoomInLine className="w-5 h-5" />
-                </motion.button>
-              </div>
-
-              {/* Thumbnails - Modified for mobile */}
-              {product?.media?.length > 1 && (
-                <div className="relative px-1">
-                  <div className={`overflow-x-auto ${
-                    isMobile 
-                      ? '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]' 
-                      : 'scrollbar-thin'
-                  }`}>
-                    <div className={`flex gap-3 ${isMobile ? 'py-4' : 'py-2'} px-0.5`}>
-                      {product.media.map((item, index) => (
-                        <motion.button
-                          key={index}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => {
-                            setSelectedMedia(index);
-                            setIsPlaying(false);
-                          }}
-                          className={`relative flex-shrink-0 ${
-                            isMobile ? 'w-16 h-16' : 'w-20 h-20'
-                          } rounded-xl overflow-hidden group
-                            transition-all duration-200 ${
-                            selectedMedia === index 
-                              ? `ring-2 ${
-                                  currentTheme === 'eyeCare' 
-                                    ? 'ring-[#433422]' 
-                                    : currentTheme === 'dark'
-                                    ? 'ring-white'
-                                    : 'ring-black'
-                                }` 
-                              : 'opacity-60 hover:opacity-100'
-                          }`}
-                        >
-                          {renderThumbnail(item, index)}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Enhanced Zoom Modal */}
-              <AnimatePresence>
-                {showZoom && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="fixed inset-0 z-50 flex flex-col items-center justify-between backdrop-blur-lg"
-                    onClick={() => setShowZoom(false)}
-                  >
-                    {/* Dark Overlay */}
-                    <div className="absolute inset-0 bg-black/90" />
-                    
-                    {/* Header */}
-                    <motion.div 
-                      initial={{ y: -20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      className="relative w-full z-10 px-4 py-3 flex items-center justify-between"
-                    >
-                      <span className="text-white/80 text-sm">
-                        {selectedMedia + 1} / {product?.media?.length}
-                      </span>
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setShowZoom(false)}
-                        className="p-2 rounded-full bg-white/10 hover:bg-white/20"
-                      >
-                        <RiCloseLine className="w-6 h-6 text-white" />
-                      </motion.button>
-                    </motion.div>
-                    
-                    {/* Main Media */}
-                    <motion.div
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.9, opacity: 0 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                      className="relative flex-1 w-full flex items-center justify-center p-4"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div {...swipeHandlers} className="relative w-full h-full flex items-center justify-center">
-                        <AnimatePresence mode="wait">
-                          {product?.media[selectedMedia]?.type === 'video' ? (
-                            <div className="relative w-full h-full flex items-center justify-center bg-black/5">
-                              <video
-                                key={selectedMedia}
-                                ref={videoRef}
-                                src={product.media[selectedMedia].url}
-                                poster={product.media[selectedMedia].thumbnail}
-                                controls
-                                controlsList="nodownload"
-                                playsInline
-                                className="max-w-full max-h-[calc(100vh-200px)] object-contain"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                Your browser does not support the video tag.
-                              </video>
-                            </div>
-                          ) : (
-                            <motion.img
-                              key={selectedMedia}
-                              initial={{ opacity: 0, x: 50 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -50 }}
-                              transition={{ duration: 0.2 }}
-                              src={product?.media[selectedMedia]?.url}
-                              alt={product?.name}
-                              className="max-w-full max-h-[calc(100vh-200px)] object-contain"
-                            />
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-
-                    {/* Thumbnails */}
-                    <motion.div 
-                      initial={{ y: 20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      className="relative w-full z-10 p-4 bg-black/50 backdrop-blur-sm"
-                    >
-                      <div className="max-w-screen-lg mx-auto">
-                        <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                          <div className="flex gap-2 items-center justify-start">
-                            {product?.media.map((item, index) => (
-                              <motion.button
-                                key={index}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMedia(index);
-                                }}
-                                className={`relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden 
-                                  transition-all duration-200 ${
-                                  selectedMedia === index 
-                                    ? 'ring-2 ring-white ring-offset-2 ring-offset-black/50' 
-                                    : 'opacity-50 hover:opacity-80'
-                                }`}
-                              >
-                                {item.type === 'video' ? (
-                                  <div className="relative w-full h-full">
-                                    <img
-                                      src={item.thumbnail}
-                                      alt={`${product?.name} video ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                                      <RiPlayCircleLine className="w-8 h-8 text-white" />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <img
-                                    src={item.url}
-                                    alt={`${product?.name} ${index + 1}`}
-                                    className="w-full h-full object-cover"
-                                  />
-                                )}
-                              </motion.button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Product Highlights - Desktop Only */}
-            {!isMobile && (
-              <div className={`p-6 rounded-2xl ${
-                currentTheme === 'dark' ? 'bg-gray-800' 
-                : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                : 'bg-white'
-              } shadow-lg`}>
-                <h3 className={`text-lg font-semibold mb-4 ${
-                  currentTheme === 'dark' ? 'text-white' 
-                  : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                  : 'text-gray-900'
-                }`}>
-                  Product Highlights
-                </h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Brand Info */}
-                  <div className={`p-4 rounded-xl ${
-                    currentTheme === 'dark' ? 'bg-gray-700/50' 
-                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                    : 'bg-gray-50'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`p-2 rounded-lg ${
-                        currentTheme === 'dark' ? 'bg-gray-600' 
-                        : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                        : 'bg-black'
-                      }`}>
-                        <RiStore2Line className="w-5 h-5 text-white" />
-                      </span>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Brand
-                        </p>
-                        <p className={`text-base font-semibold ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          {product?.brand}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category Info */}
-                  <div className={`p-4 rounded-xl ${
-                    currentTheme === 'dark' ? 'bg-gray-700/50' 
-                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                    : 'bg-gray-50'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`p-2 rounded-lg ${
-                        currentTheme === 'dark' ? 'bg-gray-600' 
-                        : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                        : 'bg-black'
-                      }`}>
-                        <RiPriceTag3Line className="w-5 h-5 text-white" />
-                      </span>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Category
-                        </p>
-                        <p className={`text-base font-semibold ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          {product?.category?.name}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stock Status */}
-                  <div className={`p-4 rounded-xl ${
-                    currentTheme === 'dark' ? 'bg-gray-700/50' 
-                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                    : 'bg-gray-50'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`p-2 rounded-lg ${
-                        product?.stock > 0
-                          ? 'bg-green-500'
-                          : 'bg-red-500'
-                      }`}>
-                        <RiCheckboxCircleLine className="w-5 h-5 text-white" />
-                      </span>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Status
-                        </p>
-                        <p className={`text-base font-semibold ${
-                          product?.stock > 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {product?.stock > 0 ? 'In Stock' : 'Out of Stock'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Price Range */}
-                  <div className={`p-4 rounded-xl ${
-                    currentTheme === 'dark' ? 'bg-gray-700/50' 
-                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                    : 'bg-gray-50'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`p-2 rounded-lg ${
-                        currentTheme === 'dark' ? 'bg-gray-600' 
-                        : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                        : 'bg-black'
-                      }`}>
-                        <RiMoneyDollarCircleLine className="w-5 h-5 text-white" />
-                      </span>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Price
-                        </p>
-                        <p className={`text-base font-semibold ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          ₨ {product?.price.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Mobile Product Info */}
-            {isMobile && (
-              <div className="space-y-4">
-                {/* Basic Info Card */}
-                <div className={`p-4 rounded-xl ${
-                  currentTheme === 'dark' ? 'bg-gray-800' 
-                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                  : 'bg-white'
-                } shadow-lg`}>
-                  {/* Product Title and Meta */}
-                  <div className="mb-4">
-                    <h1 className={`text-xl font-bold mb-2 ${
-                      currentTheme === 'dark' ? 'text-white' 
-                      : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                      : 'text-gray-900'
-                    }`}>
-                      {product?.name}
-                    </h1>
-                    <div className={`flex flex-wrap items-center gap-2 ${
-                      currentTheme === 'dark' ? 'text-gray-400' 
-                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                      : 'text-gray-600'
-                    }`}>
-                      <div className="flex items-center gap-1.5">
-                        <RiStore2Line className="w-4 h-4" />
-                        <span className="text-sm">{product?.brand}</span>
-                      </div>
-                      <span>•</span>
-                      <div className="flex items-center gap-1.5">
-                        <RiPriceTag3Line className="w-4 h-4" />
-                        <span className="text-sm">{product?.category?.name}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Price and Stock Grid */}
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    {/* Price Card */}
-                    <div className={`p-3 rounded-lg ${
-                      currentTheme === 'dark' ? 'bg-gray-700/50' 
-                      : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                      : 'bg-gray-50'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md ${
-                          currentTheme === 'dark' ? 'bg-gray-600' 
-                          : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                          : 'bg-black'
-                        }`}>
-                          <span className="text-white text-xs font-semibold">₨</span>
-                        </span>
-                        <span className={`text-xs font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Price
-                        </span>
-                      </div>
-                      <p className={`text-lg font-bold ${
-                        currentTheme === 'dark' ? 'text-white' 
-                        : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                        : 'text-gray-900'
-                      }`}>
-                        ₨ {product?.price.toLocaleString()}
-                      </p>
-                    </div>
-
-                    {/* Stock Status Card */}
-                    <div className={`p-3 rounded-lg ${
-                      currentTheme === 'dark' ? 'bg-gray-700/50' 
-                      : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                      : 'bg-gray-50'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md ${
-                          currentTheme === 'dark' ? 'bg-gray-600' 
-                          : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                          : 'bg-black'
-                        }`}>
-                          <RiCheckboxCircleLine className="w-5 h-5 text-white" />
-                        </span>
-                        <span className={`text-xs font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Stock
-                        </span>
-                      </div>
-                      <div className={`flex items-center gap-1.5 ${
-                        product?.stock > 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {product?.stock > 0 ? (
-                          <>
-                            <RiCheckboxCircleLine className="w-4 h-4" />
-                            <span className="text-sm font-semibold">{product.stock} left</span>
-                          </>
-                        ) : (
-                          <>
-                            <RiCloseLine className="w-4 h-4" />
-                            <span className="text-sm font-semibold">Out of stock</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <p className={`text-sm leading-relaxed ${
-                      currentTheme === 'dark' ? 'text-gray-300' 
-                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                      : 'text-gray-600'
-                    }`}>
-                      {product?.description}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Specifications Card - Mobile */}
-                <div className={`p-4 rounded-xl ${
-                  currentTheme === 'dark' ? 'bg-gray-800' 
-                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                  : 'bg-white'
-                } shadow-lg`}>
-                  <h3 className={`text-lg font-semibold mb-4 ${
-                    currentTheme === 'dark' ? 'text-white' 
-                    : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                    : 'text-gray-900'
-                  }`}>
-                    Specifications
-                  </h3>
-                  <div className="space-y-3">
-                    {product?.specifications.map((spec, index) => (
-                      <div key={index} className="space-y-1">
-                        <dt className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-500'
-                        }`}>
-                          {spec.key}
-                        </dt>
-                        <dd className={`text-sm ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          {spec.value}
-                        </dd>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Features Card - Mobile */}
-                <div className={`p-4 rounded-xl ${
-                  currentTheme === 'dark' ? 'bg-gray-800' 
-                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                  : 'bg-white'
-                } shadow-lg`}>
-                  <h3 className={`text-lg font-semibold mb-4 ${
-                    currentTheme === 'dark' ? 'text-white' 
-                    : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                    : 'text-gray-900'
-                  }`}>
-                    Features
-                  </h3>
-                  <ul className="space-y-3">
-                    {product?.features.map((feature, index) => (
-                      <li key={index} className={`flex items-start gap-3 ${
-                        currentTheme === 'dark' ? 'text-gray-300' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-600'
-                      }`}>
-                        <span className={`flex-shrink-0 mt-1 ${
-                          currentTheme === 'eyeCare' 
-                            ? 'text-[#433422]' 
-                            : 'text-blue-500'
-                        }`}>•</span>
-                        <span className="text-base leading-relaxed">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Product Info - Desktop */}
-          {!isMobile && (
+    <>
+      <div className={`min-h-screen ${isMobile ? 'pb-24' : 'pb-6'} ${
+        currentTheme === 'dark' ? 'bg-gray-900' 
+        : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3]' 
+        : 'bg-gray-50'
+      }`}>
+        {isMobile && renderMobileHeader()}
+        <div className="max-w-7xl mx-auto pt-6 px-4 sm:px-6">
+          <div className={`${isMobile ? 'space-y-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-8'}`}>
+            {/* Media Gallery Section */}
             <div className="space-y-6">
-              {/* Product Name and Basic Info Card */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme === 'dark' ? 'bg-gray-800' 
-                : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                : 'bg-white'
-              } shadow-lg`}>
-                {isEditing ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        currentTheme === 'dark' ? 'text-gray-300' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-600'
-                      }`}>
-                        Product Name
-                      </label>
-                      <input
-                        type="text"
-                        value={editedProduct?.name}
-                        onChange={(e) => handleInputChange('name', e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                          ${currentTheme === 'dark'
-                            ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                            : currentTheme === 'eyeCare'
-                            ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                            : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                          } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                      />
-                    </div>
+              <div className="space-y-4">
+                <div className={`relative ${isMobile ? 'mt-16' : ''}`} {...swipeHandlers}>
+                  <AnimatePresence initial={false}>
+                    {mediaState && mediaState[selectedMedia] && (
+                      <motion.div
+                        key={selectedMedia}
+                        variants={imageVariants}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        className="relative aspect-square w-full"
+                      >
+                        {mediaState[selectedMedia]?.type === 'video' ? (
+                          <div 
+                            className="relative w-full h-full flex items-center justify-center"
+                            onMouseMove={handleVideoInteraction}
+                            onClick={handleVideoInteraction}
+                          >
+                            <video
+                              ref={videoRef}
+                              src={mediaState[selectedMedia].url}
+                              className="w-full h-full object-contain"
+                              poster={mediaState[selectedMedia].thumbnail}
+                              playsInline
+                              preload="metadata"
+                              onClick={handleVideoPlay}
+                              onTimeUpdate={handleVideoTimeUpdate}
+                              onLoadedMetadata={handleVideoLoadedMetadata}
+                              onEnded={handleVideoEnded}
+                            />
 
-                    <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        currentTheme === 'dark' ? 'text-gray-300' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-600'
-                      }`}>
-                        Brand
-                      </label>
-                      <input
-                        type="text"
-                        value={editedProduct?.brand}
-                        onChange={(e) => handleInputChange('brand', e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                          ${currentTheme === 'dark'
-                            ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                            : currentTheme === 'eyeCare'
-                            ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                            : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                          } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                      />
+                            {/* Video Controls Overlay */}
+                            <div 
+                              className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
+                                showControls ? 'opacity-100' : 'opacity-0'
+                              }`}
+                            >
+                              {/* Play/Pause Button */}
+                              <button
+                                onClick={handleVideoPlay}
+                                className="p-4 rounded-full bg-black/40 hover:bg-black/60 transition-colors duration-200"
+                              >
+                                {isPlaying ? (
+                                  <RiPauseCircleLine className="w-12 h-12 text-white" />
+                                ) : (
+                                  <RiPlayCircleLine className="w-12 h-12 text-white" />
+                                )}
+                              </button>
+
+                              {/* Navigation Controls */}
+                              {mediaState?.length > 1 && (
+                                <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedMedia(prev => 
+                                        prev === 0 ? mediaState.length - 1 : prev - 1
+                                      );
+                                    }}
+                                    className="p-3 rounded-full backdrop-blur-md shadow-lg transform transition-all duration-200 bg-black/40 hover:bg-black/60 pointer-events-auto"
+                                  >
+                                    <RiArrowLeftSLine className="w-6 h-6 text-white" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedMedia(prev => 
+                                        prev === mediaState.length - 1 ? 0 : prev + 1
+                                      );
+                                    }}
+                                    className="p-3 rounded-full backdrop-blur-md shadow-lg transform transition-all duration-200 bg-black/40 hover:bg-black/60 pointer-events-auto"
+                                  >
+                                    <RiArrowRightSLine className="w-6 h-6 text-white" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={mediaState[selectedMedia]?.url}
+                            alt={product?.name}
+                            className="w-full h-full object-contain"
+                          />
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  {/* Image Counter - Show only on mobile */}
+                  {isMobile && mediaState?.length > 1 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 
+                        rounded-full text-sm font-medium backdrop-blur-md ${
+                        currentTheme === 'dark' 
+                          ? 'bg-black/40 text-white' 
+                          : currentTheme === 'eyeCare' 
+                          ? 'bg-[#433422]/30 text-[#433422]' 
+                          : 'bg-black/30 text-white'
+                      }`}
+                    >
+                      {selectedMedia + 1} / {mediaState.length}
+                    </motion.div>
+                  )}
+
+                  {/* Zoom Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowZoom(true)}
+                    className={`absolute top-4 right-4 p-2.5 rounded-full backdrop-blur-md 
+                      shadow-lg transition-all duration-200 ${
+                      currentTheme === 'dark' 
+                        ? 'bg-black/40 hover:bg-black/60 text-white' 
+                        : currentTheme === 'eyeCare' 
+                        ? 'bg-[#433422]/30 hover:bg-[#433422]/40 text-[#433422]' 
+                        : 'bg-white/40 hover:bg-white/60 text-black'
+                      }`}
+                  >
+                    <RiZoomInLine className="w-5 h-5" />
+                  </motion.button>
+                </div>
+
+                {/* Thumbnails - Only show on desktop */}
+                {!isMobile && mediaState?.length > 1 && (
+                  <div className="relative px-1">
+                    <div className="overflow-x-auto scrollbar-thin">
+                      <div className="flex gap-3 py-2 px-0.5">
+                        {mediaState.map((item, index) => (
+                          <motion.button
+                            key={index}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setSelectedMedia(index);
+                              setIsPlaying(false);
+                            }}
+                            className={`relative flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden group
+                              transition-all duration-200 ${
+                              selectedMedia === index 
+                                ? `ring-2 ${
+                                    currentTheme === 'dark' ? 'ring-white' 
+                                    : currentTheme === 'eyeCare' ? 'ring-[#433422]'
+                                    : 'ring-black'
+                                  }` 
+                                : 'opacity-60 hover:opacity-100'
+                              }`}
+                          >
+                            {renderThumbnail(item, index)}
+                          </motion.button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                ) : (
-                  renderDesktopProductInfo()
                 )}
               </div>
-
-              {/* Specifications - Desktop */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme === 'dark' ? 'bg-gray-800' 
-                : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                : 'bg-white'
-              } shadow-lg`}>
-                <h3 className={`text-lg font-semibold mb-4 ${
-                  currentTheme === 'dark' ? 'text-white' 
-                  : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                  : 'text-gray-900'
-                }`}>
-                  Specifications
-                </h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {product?.specifications.map((spec, index) => (
-                    <div key={index} className="space-y-1">
-                      <dt className={`text-sm font-medium ${
-                        currentTheme === 'dark' ? 'text-gray-400' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-500'
-                      }`}>
-                        {spec.key}
-                      </dt>
-                      <dd className={`text-sm ${
-                        currentTheme === 'dark' ? 'text-white' 
-                        : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                        : 'text-gray-900'
-                      }`}>
-                        {spec.value}
-                      </dd>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Features - Desktop */}
-              <div className={`p-6 rounded-2xl ${
-                currentTheme === 'dark' ? 'bg-gray-800' 
-                : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                : 'bg-white'
-              } shadow-lg`}>
-                <h3 className={`text-lg font-semibold mb-4 ${
-                  currentTheme === 'dark' ? 'text-white' 
-                  : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                  : 'text-gray-900'
-                }`}>
-                  Features
-                </h3>
-                <ul className="space-y-3">
-                  {product?.features.map((feature, index) => (
-                    <li key={index} className={`flex items-start gap-3 ${
-                      currentTheme === 'dark' ? 'text-gray-300' 
-                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                      : 'text-gray-600'
-                    }`}>
-                      <span className={`flex-shrink-0 mt-1 ${
-                        currentTheme === 'eyeCare' 
-                          ? 'text-[#433422]' 
-                          : 'text-blue-500'
-                      }`}>•</span>
-                      <span className="text-base leading-relaxed">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </div>
-          )}
+
+            {/* Product Info Section */}
+            {renderProductInfo()}
+          </div>
         </div>
+        {isMobile && renderBottomBar()}
       </div>
-      {isMobile && renderBottomBar()}
-    </div>
+
+      {/* Product Action Modal */}
+      <ProductActionModal
+        isOpen={isBottomSheetOpen}
+        onClose={() => setIsBottomSheetOpen(false)}
+        product={product}
+        selectedColor={selectedColor}
+        onColorSelect={handleColorSelect}
+        quantity={quantity}
+        setQuantity={setQuantity}
+        onAction={bottomSheetMode === 'cart' ? handleAddToCart : handleBuyNow}
+        loading={loading}
+        currentTheme={currentTheme}
+        mode={bottomSheetMode}
+      />
+    </>
   );
 };
 
-export default ProductDetails; 
+export default ProductDetails;

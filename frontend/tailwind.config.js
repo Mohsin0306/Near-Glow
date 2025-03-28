@@ -21,12 +21,17 @@ module.exports = {
       spin: {
         'from': { transform: 'rotate(0deg)' },
         'to': { transform: 'rotate(360deg)' },
+      },
+      'slide-up': {
+        '0%': { transform: 'translateY(100%)' },
+        '100%': { transform: 'translateY(0)' },
       }
     },
     animation: {
       fadeIn: 'fadeIn 0.3s ease-in-out',
       slideUp: 'slideUp 0.4s ease-out',
-      spin: 'spin 1s linear infinite'
+      spin: 'spin 1s linear infinite',
+      'slide-up': 'slide-up 0.3s ease-out',
     }
   },
   plugins: [],

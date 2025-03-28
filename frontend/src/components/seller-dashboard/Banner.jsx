@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { bannerAPI } from '../../utils/api';
 
@@ -6,6 +6,34 @@ const Banner = () => {
   const { currentTheme } = useTheme();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [banners, setBanners] = useState([]);
+  const touchStart = useRef(null);
+  const touchEnd = useRef(null);
+
+  // Minimum distance for a swipe
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    touchEnd.current = null;
+    touchStart.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchMove = (e) => {
+    touchEnd.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart.current || !touchEnd.current) return;
+
+    const distance = touchStart.current - touchEnd.current;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe) {
+      setCurrentSlide((prev) => (prev + 1) % banners.length);
+    } else if (isRightSwipe) {
+      setCurrentSlide((prev) => (prev - 1 + banners.length) % banners.length);
+    }
+  };
 
   // Fetch banners from API
   useEffect(() => {
@@ -74,10 +102,13 @@ const Banner = () => {
     <div className="relative w-full bg-gray-50">
       {/* Main Banner */}
       <div className="relative h-[150px] sm:h-[250px] md:h-[350px] overflow-hidden">
-        {/* Slides Container */}
+        {/* Slides Container with touch events */}
         <div 
           className="flex transition-transform duration-500 h-full w-full"
           style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
         >
           {banners.map((banner, index) => (
             <div 
@@ -138,28 +169,52 @@ const Banner = () => {
           ))}
         </div>
 
-        {/* Navigation Arrows */}
+        {/* Navigation Arrows - Only visible on desktop */}
         {banners.length > 1 && (
-          <>
+          <div className="hidden sm:block">
             <button 
               onClick={() => setCurrentSlide((prev) => (prev - 1 + banners.length) % banners.length)}
-              className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/30 
-                hover:bg-white/50 transition-all duration-300 backdrop-blur-sm"
+              className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full 
+                bg-white/30 hover:bg-white/50 transition-all duration-300 
+                backdrop-blur-sm z-10"
+              aria-label="Previous slide"
             >
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+              <svg 
+                className="w-6 h-6 text-white" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth="2.5" 
+                  d="M15 19l-7-7 7-7" 
+                />
               </svg>
             </button>
             <button 
               onClick={() => setCurrentSlide((prev) => (prev + 1) % banners.length)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/30 
-                hover:bg-white/50 transition-all duration-300 backdrop-blur-sm"
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full 
+                bg-white/30 hover:bg-white/50 transition-all duration-300 
+                backdrop-blur-sm z-10"
+              aria-label="Next slide"
             >
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+              <svg 
+                className="w-6 h-6 text-white" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth="2.5" 
+                  d="M9 5l7 7-7 7" 
+                />
               </svg>
             </button>
-          </>
+          </div>
         )}
 
         {/* Modern Dots Indicator */}

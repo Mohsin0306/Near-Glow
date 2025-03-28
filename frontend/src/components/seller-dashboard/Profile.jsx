@@ -147,14 +147,13 @@ const Profile = () => {
     setError(null);
 
     try {
-      // Create FormData object
       const formDataToSend = new FormData();
 
-      // Update the allowedFields array to include email
+      // Append basic fields
       const allowedFields = [
         'firstName',
         'lastName',
-        'email',  // Add email to allowed fields
+        'email',
         'phoneNumber',
         'address',
         'city',
@@ -162,24 +161,23 @@ const Profile = () => {
         'bio'
       ];
 
-      // Append allowed non-array fields
       allowedFields.forEach(key => {
         if (formData[key]) {
           formDataToSend.append(key, formData[key]);
         }
       });
 
-      // Handle arrays - convert to comma-separated strings
-      if (formData.preferredScents.length > 0) {
+      // Handle arrays
+      if (formData.preferredScents?.length > 0) {
         formDataToSend.append('preferredScents', formData.preferredScents.join(','));
       }
-      if (formData.allergies.length > 0) {
+      if (formData.allergies?.length > 0) {
         formDataToSend.append('allergies', formData.allergies.join(','));
       }
 
-      // Add image if it exists
+      // Handle image upload separately - IMPORTANT: Use 'image' as the field name
       if (formData.image instanceof File) {
-        formDataToSend.append('image', formData.image);
+        formDataToSend.append('image', formData.image); // Changed to 'image' to match multer
       }
 
       const response = await axios.put(
@@ -213,16 +211,18 @@ const Profile = () => {
     if (!file) return;
 
     // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/gif', 'image/jfif', 'image/avif', 'image/svg+xml', 'image/tiff'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setError('Please select a valid image file (JPEG, PNG, WebP, GIF, JFIF, AVIF, SVG, or TIFF)');
+      setError('Please select a valid image file (JPEG, PNG, JPG, or WebP)');
+      toast.error('Please select a valid image file');
       return;
     }
 
-    // Validate file size (max 100MB)
-    const maxSize = 100 * 1024 * 1024; // 100MB in bytes
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
     if (file.size > maxSize) {
-      setError('Image size should be less than 100MB');
+      setError('Image size should be less than 5MB');
+      toast.error('Image size should be less than 5MB');
       return;
     }
 

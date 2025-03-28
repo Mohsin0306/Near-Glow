@@ -60,12 +60,39 @@ const upload = multer({
 });
 
 // Single file upload middleware for banners
-const singleUploadMiddleware = (req, res, next) => {
-  upload.single('media')(req, res, function(err) {
+const bannerUpload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 500 * 1024 * 1024 // Increased to 500MB limit for videos/images
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'video/mp4',
+      'video/webm',
+      'video/quicktime'
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, WebP, GIF, MP4, WebM, and MOV files are allowed.'), false);
+    }
+  }
+}).fields([
+  { name: 'media', maxCount: 1 },
+  { name: 'image', maxCount: 1 }
+]); 
+
+const bannerUploadMiddleware = (req, res, next) => {
+  bannerUpload(req, res, function(err) {
     if (err instanceof multer.MulterError) {
       return res.status(400).json({
         success: false,
-        message: err.message
+        message: `Upload error: ${err.message}`
       });
     } else if (err) {
       return res.status(400).json({
@@ -73,34 +100,51 @@ const singleUploadMiddleware = (req, res, next) => {
         message: err.message
       });
     }
+    // Combine fields if both exist
+    if (req.files) {
+      req.file = req.files.image?.[0] || req.files.media?.[0];
+    }
     next();
   });
 };
 
 // Middleware function for products
 const uploadMiddleware = (req, res, next) => {
-  upload.fields([
+  // Create multer upload instance with dynamic fields
+  const uploadInstance = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: {
+      fileSize: 100 * 1024 * 1024, // 100MB limit
+      files: 30 // Increased limit to accommodate color images
+    }
+  }).fields([
     { name: 'images', maxCount: 5 },
-    { name: 'videos', maxCount: 1 }
-  ])(req, res, function(err) {
+    { name: 'videos', maxCount: 1 },
+    { name: 'colorImage_Red', maxCount: 5 },
+    { name: 'colorImage_Blue', maxCount: 5 },
+    { name: 'colorImage_Green', maxCount: 5 },
+    { name: 'colorImage_Yellow', maxCount: 5 },
+    { name: 'colorImage_Black', maxCount: 5 },
+    { name: 'colorImage_White', maxCount: 5 },
+    { name: 'colorImage_Pink', maxCount: 5 },
+    { name: 'colorImage_Purple', maxCount: 5 },
+    { name: 'colorImage_Orange', maxCount: 5 },
+    { name: 'colorImage_Brown', maxCount: 5 },
+    { name: 'colorImage_Grey', maxCount: 5 },
+    // Add any other common colors you need
+  ]);
+
+  // Handle the upload
+  uploadInstance(req, res, function(err) {
     if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({
-          success: false,
-          message: 'File too large. Maximum size is 100MB'
-        });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({
-          success: false,
-          message: 'Too many files. Maximum is 5 images and 1 video'
-        });
-      }
+      console.error('Multer error:', err);
       return res.status(400).json({
         success: false,
         message: err.message
       });
     } else if (err) {
+      console.error('Upload error:', err);
       return res.status(400).json({
         success: false,
         message: err.message
@@ -149,6 +193,7 @@ const categoryUploadMiddleware = (req, res, next) => {
 
 module.exports = {
   uploadMiddleware,
-  singleUploadMiddleware,
-  categoryUploadMiddleware
+  singleUploadMiddleware: bannerUploadMiddleware,
+  categoryUploadMiddleware,
+  bannerUploadMiddleware
 }; 

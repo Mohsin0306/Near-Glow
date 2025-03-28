@@ -2,6 +2,30 @@ const mongoose = require('mongoose');
 const Product = require('./Product');
 const Notification = require('./Notification');
 
+const orderItemSchema = new mongoose.Schema({
+  product: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true
+  },
+  quantity: {
+    type: Number,
+    required: true
+  },
+  price: {
+    type: Number,
+    required: true
+  },
+  selectedColor: {
+    name: String,
+    media: {
+      url: String,
+      public_id: String,
+      thumbnail: String
+    }
+  }
+});
+
 const orderSchema = new mongoose.Schema({
   orderId: {
     type: String,
@@ -17,29 +41,32 @@ const orderSchema = new mongoose.Schema({
     ref: 'Seller',
     required: true
   },
-  items: [{
-    product: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
+  items: [orderItemSchema],
+  shippingAddress: {
+    firstName: {
+      type: String,
       required: true
     },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1
+    lastName: {
+      type: String,
+      required: true
     },
-    price: {
-      type: Number,
+    email: {
+      type: String,
+      required: true
+    },
+    phone: {
+      type: String,
+      required: true
+    },
+    address: {
+      type: String,
+      required: true
+    },
+    city: {
+      type: String,
       required: true
     }
-  }],
-  shippingAddress: {
-    firstName: String,
-    lastName: String,
-    address: String,
-    city: String,
-    country: String,
-    phoneNumber: String
   },
   paymentMethod: {
     type: String,
@@ -82,11 +109,49 @@ const orderSchema = new mongoose.Schema({
       'Payment issues',
       'Other'
     ]
+  },
+  referralDiscount: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  coinsUsed: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  finalAmount: {
+    type: Number,
+    required: true
+  },
+  coinValueUsed: {
+    type: Number,
+    default: 0.02 // Store the coin value rate used for this order
+  },
+  deliveryPrice: {
+    type: Number,
+    required: true,
+    default: 0
   }
 });
 
 // Add this pre-save middleware to update product orderCount
 orderSchema.pre('save', async function(next) {
+  if (this.isNew || this.isModified('totalAmount') || this.isModified('referralDiscount') || this.isModified('deliveryPrice')) {
+    const totalAmount = Number(this.totalAmount) || 0;
+    const deliveryPrice = Number(this.deliveryPrice) || 0;
+    const referralDiscount = Number(this.referralDiscount) || 0;
+
+    this.finalAmount = (totalAmount + deliveryPrice) - referralDiscount;
+
+    console.log('Order amounts calculated:', {
+      totalAmount,
+      deliveryPrice,
+      referralDiscount,
+      finalAmount: this.finalAmount
+    });
+  }
+
   // Only increment order counts for new orders
   if (this.isNew) {
     try {
@@ -188,5 +253,14 @@ orderSchema.pre('findOneAndUpdate', async function(next) {
   
   next();
 });
+
+// Add virtual for payable amount
+orderSchema.virtual('payableAmount').get(function() {
+  return this.finalAmount || this.totalAmount - (this.referralDiscount || 0);
+});
+
+// Ensure virtuals are included when converting to JSON
+orderSchema.set('toJSON', { virtuals: true });
+orderSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Order', orderSchema); 

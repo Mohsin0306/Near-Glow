@@ -1,22 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   RiUser3Line,
   RiPhoneLine,
   RiUserSmileLine
 } from 'react-icons/ri';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 
 const SignUp = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentTheme } = useTheme();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     username: '',
     phoneNumber: '',
+    referralCode: ''
   });
+
+  // Extract referral code from URL on component mount
+  useEffect(() => {
+    // Check if we came from a referral link
+    const path = location.pathname;
+    if (path.startsWith('/ref/')) {
+      const referralCode = path.split('/ref/')[1];
+      console.log('Referral code found:', referralCode); // Debug log
+      setFormData(prev => ({
+        ...prev,
+        referralCode
+      }));
+    }
+  }, [location]);
 
   const handleChange = (e) => {
     setFormData({
@@ -29,18 +47,33 @@ const SignUp = () => {
     e.preventDefault();
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://192.168.100.17:5000/api'}/auth/register/buyer`, {
+      // Log the data being sent
+      console.log('Submitting registration with data:', {
+        ...formData,
+        referralCode: formData.referralCode || location.pathname.split('/ref/')[1] || ''
+      });
+
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://api.nearglow.com/api'}/auth/register/buyer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          referralCode: formData.referralCode || location.pathname.split('/ref/')[1] || ''
+        })
       });
 
       const data = await response.json();
+      console.log('Registration response:', data); // Debug log
 
       if (data.success) {
-        // Show success message
-        toast.success('Registration successful! Please login.');
-        navigate('/login');
+        toast.success('Registration successful!');
+        
+        if (data.token && data.user) {
+          await login(data.token, data.user);
+          window.location.href = `/${data.user._id}`;
+        } else {
+          window.location.href = '/login';
+        }
       } else {
         toast.error(data.message || 'Registration failed');
       }
@@ -57,6 +90,11 @@ const SignUp = () => {
           <h2 className="mt-6 text-3xl font-bold text-gray-900 dark:text-white">
             Create your account
           </h2>
+          {formData.referralCode && (
+            <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+              Signing up with referral code: {formData.referralCode}
+            </p>
+          )}
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Already have an account?{' '}
             <button

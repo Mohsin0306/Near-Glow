@@ -21,7 +21,11 @@ const notificationSchema = new mongoose.Schema({
       'NEW_ORDER',
       'ADMIN_MESSAGE',
       'PRICE_DROP',
-      'ORDER_CANCELLED'
+      'ORDER_CANCELLED',
+      'REWARD_EARNED',
+      'PRICE_ALERT',
+      'STOCK_ALERT',
+      'PAYMENT_STATUS'
     ],
     required: true
   },

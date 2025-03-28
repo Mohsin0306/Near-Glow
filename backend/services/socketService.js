@@ -6,13 +6,15 @@ const PushSubscription = require('../models/PushSubscription');
 let io;
 const connectedUsers = new Map(); // Track connected users
 
-const initializeSocket = (server) => {
+const initializeSocket = (server, allowedOrigins) => {
   io = socketIO(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || "http://localhost:3000",
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
-      credentials: true
-    }
+      credentials: true,
+      allowedHeaders: ["Content-Type", "Authorization"]
+    },
+    transports: ['websocket', 'polling']
   });
 
   io.use((socket, next) => {
@@ -74,33 +76,114 @@ const sendPushNotification = async (userId, notification) => {
   }
 };
 
+const getNotificationContent = (notification) => {
+  const { type, data } = notification;
+  let title, message, icon;
+
+  switch (type) {
+    case 'ORDER_STATUS':
+      switch (data?.status) {
+        case 'processing':
+          title = 'Order Processing';
+          message = `Order #${data.orderId} is being processed`;
+          icon = '🔄';
+          break;
+        case 'shipped':
+          title = 'Order Shipped';
+          message = `Order #${data.orderId} has been shipped`;
+          icon = '🚚';
+          break;
+        case 'delivered':
+          title = 'Order Delivered';
+          message = `Order #${data.orderId} has been delivered`;
+          icon = '📦';
+          break;
+        case 'cancelled':
+          title = 'Order Cancelled';
+          message = `Order #${data.orderId} has been cancelled`;
+          icon = '❌';
+          break;
+        default:
+          title = 'Order Update';
+          message = `Order #${data.orderId} status updated to ${data.status}`;
+          icon = '📋';
+      }
+      break;
+
+    case 'PRICE_DROP':
+      title = 'Price Drop Alert! 🏷️';
+      message = `${data.productName} is now ${data.newPrice}! Save ${data.savings}`;
+      icon = '💰';
+      break;
+
+    case 'STOCK_UPDATE':
+      title = 'Back in Stock';
+      message = `${data.productName} is now available!`;
+      icon = '✨';
+      break;
+
+    case 'NEW_ORDER':
+      title = 'New Order Received';
+      message = `Order #${data.orderId} has been placed`;
+      icon = '🛍️';
+      break;
+
+    case 'PRODUCT_UPDATE':
+      title = 'Product Updated';
+      message = `${data.productName} has been updated`;
+      icon = '📝';
+      break;
+
+    case 'ADMIN_MESSAGE':
+      title = 'Message from Admin';
+      message = notification.message;
+      icon = '👋';
+      break;
+
+    default:
+      title = notification.title;
+      message = notification.message;
+      icon = '🔔';
+  }
+
+  return {
+    title: `${icon} ${title}`,
+    message,
+    type,
+    data
+  };
+};
+
 const emitNotification = async (recipientId, notification, senderId) => {
   if (!io) {
     console.log('Socket.io not initialized');
     return;
   }
 
-  console.log('Emitting notification:', {
-    recipientId,
-    type: notification.type,
-    title: notification.title
-  });
-
+  const notificationContent = getNotificationContent(notification);
+  
   const notificationData = {
     ...notification,
+    ...notificationContent,
     id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     senderId,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    priority: notification.type === 'NEW_ORDER' ? 'high' : 'default'
   };
 
-  // Emit to room
-  io.to(`user_${recipientId}`).emit('notification', notificationData);
+  // Check if user is connected via socket
+  const isUserConnected = io.sockets.adapter.rooms.has(`user_${recipientId}`);
 
-  // Send push notification
-  try {
-    await sendPushNotification(recipientId, notificationData);
-  } catch (error) {
-    console.error('Push notification error:', error);
+  if (isUserConnected) {
+    // If user is connected, send via socket only
+    io.to(`user_${recipientId}`).emit('notification', notificationData);
+  } else {
+    // If user is not connected, send push notification only
+    try {
+      await sendPushNotification(recipientId, notificationData);
+    } catch (error) {
+      console.error('Push notification error:', error);
+    }
   }
 };
 

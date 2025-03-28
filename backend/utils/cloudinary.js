@@ -1,12 +1,28 @@
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 
-// Configure cloudinary
+// Configure Cloudinary with environment variables directly
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true
 });
+
+// Test connection on startup
+const testConnection = async () => {
+  try {
+    const result = await cloudinary.api.ping();
+    console.log('Cloudinary connection successful:', result.status === 'ok');
+    return result.status === 'ok';
+  } catch (error) {
+    console.error('Cloudinary connection failed:', error.message);
+    return false;
+  }
+};
+
+// Run test
+testConnection();
 
 // Upload file to Cloudinary
 const uploadToCloudinary = async (file, isVideo = false) => {

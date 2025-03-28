@@ -6,14 +6,14 @@ import {
   RiCloseLine, 
   RiImageAddLine, 
   RiArrowRightLine, 
-  RiArrowLeftLine,
+  RiArrowLeftLine, 
   RiStarLine, 
   RiAddLine, 
   RiDeleteBinLine, 
   RiPlantLine,
   RiLeafLine,
   RiSunLine, 
-  RiMoonLine, 
+  RiMoonLine,
   RiHeartLine,
   RiFireLine,
   RiWaterFlashLine,
@@ -21,7 +21,6 @@ import {
   RiGiftLine,
   RiVipCrownLine,
   RiDropLine,
-  RiFlowerLine,
   RiMagicLine,
   RiShiningLine,
   RiStarSLine,
@@ -31,71 +30,136 @@ import {
   RiCloudLine,
   RiWindyLine,
   RiUmbrellaLine,
-  RiPaletteLine
+  RiPaletteLine,
+  RiEyeLine,
+  RiLipstickLine,
+  RiHandCreamLine,
+  RiSyringeLine,
+  RiMedicineBottleLine,
+  RiScissorsFill,
+  RiScissorsLine,
+  RiSparklingFill,
+  RiMistLine,
+  RiFlaskLine,
+  RiTestTubeLine,
+  RiPsychotherapyLine,
+  RiMentalHealthLine,
+  RiHeartPulseLine,
+  RiUserSmileLine,
+  RiWomenLine,
+  RiMenLine,
+  RiUserHeartLine,
+  RiUserStarLine,
+  RiSparkle2Line,
+  RiSparkle3Line,
+  RiBrushLine,
+  RiPaintBrushLine,
+  RiContrastLine,
+  RiInkBottleLine,
+  RiDropFill,
+  RiWaterFlashFill
 } from 'react-icons/ri';
 import * as RiIcons from 'react-icons/ri';
 
 // Separate IconSelector component with proper theme context
 const IconSelector = ({ selectedIcon, onSelect }) => {
-  const { currentTheme, theme } = useTheme();
+  const { currentTheme } = useTheme();
   
   const icons = [
-    { icon: RiFlowerLine, name: 'Flower' },
-    { icon: RiLeafLine, name: 'Leaf' },
-    { icon: RiPlantLine, name: 'Plant' },
-    { icon: RiSunLine, name: 'Sun' },
-    { icon: RiMoonLine, name: 'Moon' },
-    { icon: RiHeartLine, name: 'Heart' },
-    { icon: RiFireLine, name: 'Fire' },
-    { icon: RiWaterFlashLine, name: 'Water' },
-    { icon: RiDropLine, name: 'Drop' },
-    { icon: RiSparklingLine, name: 'Sparkling' },
-    { icon: RiGiftLine, name: 'Gift' },
-    { icon: RiVipCrownLine, name: 'Luxury' },
-    { icon: RiMagicLine, name: 'Magic' },
-    { icon: RiShiningLine, name: 'Shine' },
-    { icon: RiStarSLine, name: 'Star' },
-    { icon: RiMoonClearLine, name: 'Moon Clear' },
-    { icon: RiSunFoggyLine, name: 'Sun Foggy' },
-    { icon: RiRainbowLine, name: 'Rainbow' },
-    { icon: RiCloudLine, name: 'Cloud' },
-    { icon: RiWindyLine, name: 'Windy' },
-    { icon: RiUmbrellaLine, name: 'Umbrella' },
-    { icon: RiPaletteLine, name: 'Palette' }
+    // Perfumes & Fragrances
+    { icon: RiWaterFlashLine, name: 'RiWaterFlashLine', category: 'Perfumes' },
+    { icon: RiDropLine, name: 'RiDropLine', category: 'Perfumes' },
+    { icon: RiSparklingLine, name: 'RiSparklingLine', category: 'Perfumes' },
+    
+    // Cosmetics
+    { icon: RiEyeLine, name: 'RiEyeLine', category: 'Cosmetics' },
+    { icon: RiBrushLine, name: 'RiBrushLine', category: 'Cosmetics' },
+    { icon: RiPaintBrushLine, name: 'RiPaintBrushLine', category: 'Cosmetics' },
+    { icon: RiPaletteLine, name: 'RiPaletteLine', category: 'Cosmetics' },
+    
+    // Beauty & Care
+    { icon: RiHeartLine, name: 'RiHeartLine', category: 'Beauty' },
+    { icon: RiScissorsLine, name: 'RiScissorsLine', category: 'Beauty' },
+    { icon: RiUserSmileLine, name: 'RiUserSmileLine', category: 'Beauty' },
+    
+    // Wellness
+    { icon: RiHeartPulseLine, name: 'RiHeartPulseLine', category: 'Wellness' },
+    { icon: RiUserHeartLine, name: 'RiUserHeartLine', category: 'Wellness' },
+    { icon: RiUserStarLine, name: 'RiUserStarLine', category: 'Wellness' },
+    
+    // Gender
+    { icon: RiWomenLine, name: 'RiWomenLine', category: 'Gender' },
+    { icon: RiMenLine, name: 'RiMenLine', category: 'Gender' },
+    
+    // Effects
+    { icon: RiSparklingFill, name: 'RiSparklingFill', category: 'Effects' },
+    { icon: RiDropFill, name: 'RiDropFill', category: 'Effects' },
+    { icon: RiWaterFlashFill, name: 'RiWaterFlashFill', category: 'Effects' },
+    { icon: RiContrastLine, name: 'RiContrastLine', category: 'Effects' },
+    
+    // Nature
+    { icon: RiPlantLine, name: 'RiPlantLine', category: 'Nature' },
+    { icon: RiLeafLine, name: 'RiLeafLine', category: 'Nature' },
+    { icon: RiSunLine, name: 'RiSunLine', category: 'Nature' },
+    { icon: RiMoonLine, name: 'RiMoonLine', category: 'Nature' }
   ];
 
+  // Group icons by category
+  const groupedIcons = icons.reduce((acc, icon) => {
+    if (!acc[icon.category]) {
+      acc[icon.category] = [];
+    }
+    acc[icon.category].push(icon);
+    return acc;
+  }, {});
+
   return (
-    <div className="grid grid-cols-7 gap-2">
-      {icons.map((IconItem, index) => (
-        <button
-          key={index}
-          onClick={() => onSelect(IconItem.icon)}
-          className={`p-2 rounded-lg transition-all duration-300 ${
-            selectedIcon === IconItem.icon
-              ? currentTheme === 'dark'
-                ? 'bg-gray-700'
-                : currentTheme === 'eyeCare'
-                ? 'bg-[#E6D5B8]'
-                : 'bg-gray-200'
-              : currentTheme === 'dark'
-              ? 'hover:bg-gray-700'
+    <div className="space-y-4">
+      {Object.entries(groupedIcons).map(([category, categoryIcons]) => (
+        <div key={category}>
+          <h3 className={`text-sm font-medium mb-2 ${
+            currentTheme === 'dark' 
+              ? 'text-gray-300' 
               : currentTheme === 'eyeCare'
-              ? 'hover:bg-[#E6D5B8]'
-              : 'hover:bg-gray-100'
-          }`}
-          title={IconItem.name}
-        >
-          <IconItem.icon 
-            size={24} 
-            className={
-              currentTheme === 'dark' 
-                ? 'text-white' 
-                : currentTheme === 'eyeCare'
-                ? 'text-[#433422]'
-                : 'text-gray-700'
-            }
-          />
-        </button>
+              ? 'text-[#433422]'
+              : 'text-gray-600'
+          }`}>
+            {category}
+          </h3>
+          <div className="grid grid-cols-7 gap-2">
+            {categoryIcons.map((IconItem) => (
+              <button
+                key={IconItem.name}
+                onClick={() => onSelect(IconItem.name)}
+                className={`p-2 rounded-lg transition-all duration-300 ${
+                  selectedIcon === IconItem.name
+                    ? currentTheme === 'dark'
+                      ? 'bg-gray-700'
+                      : currentTheme === 'eyeCare'
+                      ? 'bg-[#E6D5B8]'
+                      : 'bg-gray-200'
+                    : currentTheme === 'dark'
+                    ? 'hover:bg-gray-700'
+                    : currentTheme === 'eyeCare'
+                    ? 'hover:bg-[#E6D5B8]'
+                    : 'hover:bg-gray-100'
+                }`}
+                title={IconItem.name}
+              >
+                <IconItem.icon 
+                  size={24} 
+                  className={
+                    currentTheme === 'dark' 
+                      ? 'text-white' 
+                      : currentTheme === 'eyeCare'
+                      ? 'text-[#433422]'
+                      : 'text-gray-700'
+                  }
+                />
+              </button>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -213,6 +277,7 @@ const allSubcategories = {
 const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
   const { currentTheme } = useTheme();
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     _id: initialData?._id || null,
     name: initialData?.name || '',
@@ -252,7 +317,7 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
   const handleNext = () => setStep(prev => Math.min(prev + 1, 5));
   const handlePrev = () => setStep(prev => Math.max(prev - 1, 1));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate required fields
@@ -261,17 +326,23 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
       return;
     }
 
-    // Create submission data
-    const submissionData = {
-      ...formData,
-      // Ensure icon is properly formatted
-      icon: formData.icon ? { name: formData.icon.name || formData.icon } : null,
-      // Only include image if it's a new file
-      image: formData.image instanceof File ? formData.image : undefined
-    };
+    try {
+      setIsSubmitting(true); // Start loading
+      
+      // Create submission data
+      const submissionData = {
+        ...formData,
+        icon: formData.icon ? { name: formData.icon.name || formData.icon } : null,
+        image: formData.image instanceof File ? formData.image : undefined
+      };
 
-    console.log('Submitting form data:', submissionData); // Debug log
-    onSubmit(submissionData);
+      await onSubmit(submissionData);
+    } catch (error) {
+      console.error('Submission error:', error);
+      toast.error('Failed to save category');
+    } finally {
+      setIsSubmitting(false); // End loading
+    }
   };
 
   const modalVariants = {
@@ -443,7 +514,7 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                       <label className="block text-sm font-medium mb-2">Category Icon</label>
                       <IconSelector
                         selectedIcon={formData.icon}
-                        onSelect={(icon) => setFormData({...formData, icon})}
+                        onSelect={(iconName) => setFormData({...formData, icon: iconName})}
                       />
                     </div>
 
@@ -486,7 +557,7 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                       <div className="relative z-10 h-full flex items-center justify-center">
                         {formData.icon && (
                           <span className="p-2.5 bg-white/20 rounded-xl backdrop-blur-md">
-                            {React.createElement(RiIcons[formData.icon.name], {
+                            {React.createElement(RiIcons[formData.icon], {
                               size: 24,
                               className: "text-white"
                             })}
@@ -724,6 +795,7 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                 {step > 1 && (
                   <button
                     onClick={handlePrev}
+                    disabled={isSubmitting}
                     className={`px-6 py-2 rounded-xl transition-all duration-300
                       ${getThemeClass('hover')} ${getThemeClass('text')}`}
                   >
@@ -732,15 +804,24 @@ const CategoryModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                 )}
                 <button
                   onClick={step === 5 ? handleSubmit : handleNext}
+                  disabled={isSubmitting}
                   className={`px-6 py-2 rounded-xl transition-all duration-300
                     bg-gradient-to-r from-black to-gray-700 text-white
                     hover:from-gray-900 hover:to-gray-600
                     ${currentTheme === 'eyeCare' 
                       ? 'from-[#433422] to-[#6B5D4D] hover:from-[#5B483A] hover:to-[#7B6D5D]' 
                       : ''
-                    }`}
+                    }
+                    ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
                 >
-                  {step === 5 ? 'Save Category' : 'Next'}
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{step === 5 ? 'Saving...' : 'Processing...'}</span>
+                    </div>
+                  ) : (
+                    step === 5 ? 'Save Category' : 'Next'
+                  )}
                 </button>
               </div>
             </motion.div>

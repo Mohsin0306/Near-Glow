@@ -9,10 +9,13 @@ import {
   RiSearchLine,
   RiPriceTag3Line,
   RiCheckLine,
-  RiHeartFill
+  RiHeartFill,
+  RiStarFill
 } from 'react-icons/ri';
 import { createAPI } from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+import ProductActionModal from '../common/ProductActionModal';
 
 // Skeleton loader component
 const SkeletonLoader = () => (
@@ -114,19 +117,48 @@ const ProductCard = ({ product, currentTheme, wishlistItems }) => {
   const [isAdded, setIsAdded] = useState(false);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [isAddingToWishlist, setIsAddingToWishlist] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Check wishlist status from props instead of making API call
   useEffect(() => {
     setIsInWishlist(wishlistItems?.some(item => item._id === product._id));
   }, [wishlistItems, product._id]);
 
+  // Add effect to handle body scroll when modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      // Prevent body scrolling when modal is open
+      document.body.style.overflow = 'hidden';
+    } else {
+      // Restore body scrolling when modal is closed
+      document.body.style.overflow = '';
+    }
+    
+    // Cleanup function to ensure body scroll is restored
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isModalOpen]);
+
   const handleAddToWishlist = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+
+    if (!user) {
+      toast.error('Please login to add to wishlist');
+      return;
+    }
+
     try {
       setIsAddingToWishlist(true);
       const token = localStorage.getItem('authToken');
       
-      const response = await fetch('http://192.168.100.17:5000/api/wishlist/add', {
+      const response = await fetch('https://api.nearglow.com/api/wishlist/add', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -140,158 +172,416 @@ const ProductCard = ({ product, currentTheme, wishlistItems }) => {
       const data = await response.json();
       if (data.success) {
         setIsInWishlist(true);
+        toast.success('Added to wishlist');
       }
     } catch (error) {
       console.error('Error adding to wishlist:', error);
+      toast.error('Failed to add to wishlist');
     } finally {
       setIsAddingToWishlist(false);
     }
   };
 
-  const handleAddToCart = async (e) => {
+  const handleAddToCart = (e) => {
     e.preventDefault();
-    try {
-      setIsAddingToCart(true);
-      const token = localStorage.getItem('authToken');
-      
-      const response = await fetch('http://192.168.100.17:5000/api/cart/add', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          productId: product._id,
-          quantity: 1
-        }),
-        credentials: 'include'
-      });
+    e.stopPropagation();
+    
+    if (!user) {
+      toast.error('Please login to add items to cart');
+      navigate('/login');
+      return;
+    }
+    setIsModalOpen(true);
+  };
 
-      const data = await response.json();
-      if (data.success) {
-        setIsAdded(true);
-        // Reset after 2 seconds
-        setTimeout(() => {
-          setIsAdded(false);
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Error adding to cart:', error);
-    } finally {
-      setIsAddingToCart(false);
+  const handleColorSelect = (color) => {
+    setSelectedColor(color);
+    
+    if (color.media && color.media.length > 0) {
+      const mainProductMedia = product.media.filter(item => 
+        !product.colors?.some(c => 
+          c.media?.some(m => m.url === item.url)
+        )
+      );
+      
+      product.media = [...color.media, ...mainProductMedia];
     }
   };
 
-  return (
-    <div className={`group h-full rounded-lg overflow-hidden shadow-lg transition-all duration-300 hover:shadow-2xl ${
-      currentTheme === 'dark' ? 'bg-gray-800' 
-      : currentTheme === 'eyeCare' ? 'bg-[#E6D5BC]'
-      : 'bg-white'
-    }`}>
-      <Link to={`/products/${product._id}`}>
-        <div className="relative w-full pb-[100%]">
-          {product.media && product.media.length > 0 && (
-            <img 
-              src={product.media[0].url} 
-              alt={product.name}
-              className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-110"
-              onError={(e) => {
-                e.target.src = 'https://via.placeholder.com/400';
-                e.target.onError = null; // Prevent infinite loop if placeholder fails
-              }}
-            />
-          )}
-          {!product.media?.length && (
-            <div className="absolute inset-0 bg-gray-200 flex items-center justify-center">
-              <span className="text-gray-400">No Image</span>
-            </div>
-          )}
-          <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
-          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex gap-1.5 sm:gap-2">
-            {/* Wishlist Button - Smaller icons for desktop */}
-            <button 
-              className={`p-1.5 sm:p-2 rounded-full shadow-lg transform transition-all duration-300 
-                ${isAddingToWishlist ? 'scale-90' : 'hover:scale-110'}
-                ${isInWishlist 
-                  ? currentTheme === 'dark'
-                    ? 'bg-red-500 text-white hover:bg-red-600'
-                    : currentTheme === 'eyeCare'
-                    ? 'bg-[#FF6B6B] text-white hover:bg-[#FF5252]'
-                    : 'bg-red-500 text-white hover:bg-red-600'
-                  : currentTheme === 'dark'
-                  ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
-                  : 'bg-white/90 hover:bg-white text-gray-700'
-                }`}
-              onClick={handleAddToWishlist}
-              disabled={isAddingToWishlist}
-            >
-              {isInWishlist ? (
-                <RiHeartFill 
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
-                    ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
-                />
-              ) : (
-                <RiHeartLine 
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
-                    ${isAddingToWishlist ? 'animate-pulse' : ''}`}
-                />
-              )}
-            </button>
+  useEffect(() => {
+    if (isModalOpen && product?.colors?.length > 0) {
+      const initialColor = product.colors[0];
+      setSelectedColor(initialColor);
+      
+      if (initialColor.media?.length > 0) {
+        const mainProductMedia = product.media.filter(item => 
+          !product.colors.some(c => 
+            c.media?.some(m => m.url === item.url)
+          )
+        );
+        
+        product.media = [...initialColor.media, ...mainProductMedia];
+      }
+    }
+  }, [isModalOpen, product]);
 
-            {/* Cart Button - Smaller icons for desktop */}
-            <button 
-              className={`p-1.5 sm:p-2 rounded-full shadow-lg transform transition-all duration-300 
-                ${isAddingToCart ? 'scale-90' : 'hover:scale-110'}
-                ${isAdded 
-                  ? currentTheme === 'dark'
-                    ? 'bg-green-500 text-white hover:bg-green-600'
+  const handleCartAction = async () => {
+    if (product?.colors?.length > 0 && !selectedColor) {
+      toast.error('Please select a color');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      
+      const api = createAPI(token);
+      await api.post('/cart/add', {
+        productId: product._id,
+        quantity,
+        colorId: selectedColor?._id,
+      });
+      
+      toast.success('Added to cart successfully');
+      setIsModalOpen(false);
+      setIsAdded(true);
+      setTimeout(() => {
+        setIsAdded(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      toast.error(error.response?.data?.message || 'Error adding to cart');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const transformedProduct = {
+    ...product,
+    colors: product.colors?.map(color => ({
+      _id: color._id,
+      name: color.name,
+      media: color.media || []
+    })) || []
+  };
+
+  // Update the modal styles with more specific and higher z-index values
+  const modalStyles = `
+    <style>
+      /* Modal overlay - extremely high z-index */
+      .modal-overlay {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 99999 !important; /* Extremely high z-index */
+        background-color: rgba(0, 0, 0, 0.7) !important;
+      }
+      
+      /* Modal content - even higher z-index */
+      .modal-content {
+        position: relative !important;
+        z-index: 100000 !important; /* Higher than overlay */
+      }
+      
+      /* Force all other elements below modal */
+      body.modal-open header,
+      body.modal-open nav,
+      body.modal-open .sticky,
+      body.modal-open .fixed,
+      body.modal-open [class*="z-"] {
+        z-index: 10 !important;
+      }
+      
+      /* Prevent scrolling when modal is open */
+      body.modal-open {
+        overflow: hidden !important;
+        position: relative !important;
+      }
+    </style>
+  `;
+
+  // Add this effect to forcefully handle z-index when modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      // Add class to body when modal is open
+      document.body.classList.add('modal-open');
+      
+      // Force all sticky/fixed elements to have lower z-index
+      const stickyElements = document.querySelectorAll('.sticky, .fixed, [class*="z-"]');
+      stickyElements.forEach(el => {
+        el.dataset.originalZIndex = el.style.zIndex;
+        el.style.zIndex = '10';
+      });
+      
+      // Prevent body scrolling
+      document.body.style.overflow = 'hidden';
+    } else {
+      // Remove class from body when modal is closed
+      document.body.classList.remove('modal-open');
+      
+      // Restore original z-index values
+      const stickyElements = document.querySelectorAll('.sticky, .fixed, [class*="z-"]');
+      stickyElements.forEach(el => {
+        if (el.dataset.originalZIndex) {
+          el.style.zIndex = el.dataset.originalZIndex;
+          delete el.dataset.originalZIndex;
+        } else {
+          el.style.removeProperty('z-index');
+        }
+      });
+      
+      // Restore body scrolling
+      document.body.style.overflow = '';
+    }
+    
+    return () => {
+      // Cleanup function
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      
+      const stickyElements = document.querySelectorAll('.sticky, .fixed, [class*="z-"]');
+      stickyElements.forEach(el => {
+        if (el.dataset.originalZIndex) {
+          el.style.zIndex = el.dataset.originalZIndex;
+          delete el.dataset.originalZIndex;
+        } else {
+          el.style.removeProperty('z-index');
+        }
+      });
+    };
+  }, [isModalOpen]);
+
+  return (
+    <>
+      <div className={`group h-full rounded-lg overflow-hidden shadow-lg transition-all duration-300 hover:shadow-2xl ${
+        currentTheme === 'dark' ? 'bg-gray-800' 
+        : currentTheme === 'eyeCare' ? 'bg-[#E6D5BC]'
+        : 'bg-white'
+      }`}>
+        <Link to={`/products/${product._id}`}>
+          <div className="relative w-full pb-[100%]">
+            {product.media && product.media.length > 0 && (
+              <img 
+                src={product.media[0].url} 
+                alt={product.name}
+                className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-110"
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/400';
+                  e.target.onError = null; // Prevent infinite loop if placeholder fails
+                }}
+              />
+            )}
+            {!product.media?.length && (
+              <div className="absolute inset-0 bg-gray-200 flex items-center justify-center">
+                <span className="text-gray-400">No Image</span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
+            <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex gap-1.5 sm:gap-2">
+              {/* Wishlist Button */}
+              <button 
+                className={`p-1.5 sm:p-2 rounded-full shadow-lg transform transition-all duration-300 
+                  ${isAddingToWishlist ? 'scale-90' : 'hover:scale-110'}
+                  ${isInWishlist 
+                    ? currentTheme === 'dark'
+                      ? 'bg-red-500 text-white hover:bg-red-600'
+                      : currentTheme === 'eyeCare'
+                      ? 'bg-[#FF6B6B] text-white hover:bg-[#FF5252]'
+                      : 'bg-red-500 text-white hover:bg-red-600'
+                    : currentTheme === 'dark'
+                    ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
                     : currentTheme === 'eyeCare'
-                    ? 'bg-[#68D391] text-white hover:bg-[#48BB78]'
-                    : 'bg-green-500 text-white hover:bg-green-600'
-                  : currentTheme === 'dark'
-                  ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
-                  : currentTheme === 'eyeCare'
-                  ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
-                  : 'bg-white/90 hover:bg-white text-gray-700'
-                }`}
-              onClick={handleAddToCart}
-              disabled={isAddingToCart}
-            >
-              {isAdded ? (
-                <RiCheckLine 
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
-                    ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
-                />
-              ) : (
-                <RiShoppingCart2Line 
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
-                    ${isAddingToCart ? 'animate-pulse' : ''}`}
-                />
+                    ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
+                    : 'bg-white/90 hover:bg-white text-gray-700'
+                  }`}
+                onClick={handleAddToWishlist}
+                disabled={isAddingToWishlist}
+              >
+                {isInWishlist ? (
+                  <RiHeartFill 
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
+                      ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
+                  />
+                ) : (
+                  <RiHeartLine 
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
+                      ${isAddingToWishlist ? 'animate-pulse' : ''}`}
+                  />
+                )}
+              </button>
+
+              {/* Cart Button */}
+              <button 
+                className={`p-1.5 sm:p-2 rounded-full shadow-lg transform transition-all duration-300 
+                  ${isAddingToCart ? 'scale-90' : 'hover:scale-110'}
+                  ${isAdded 
+                    ? currentTheme === 'dark'
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : currentTheme === 'eyeCare'
+                      ? 'bg-[#68D391] text-white hover:bg-[#48BB78]'
+                      : 'bg-green-500 text-white hover:bg-green-600'
+                    : currentTheme === 'dark'
+                    ? 'bg-gray-700/90 hover:bg-gray-600 text-gray-300'
+                    : currentTheme === 'eyeCare'
+                    ? 'bg-[#E6D5BC]/90 hover:bg-[#D5C4AB] text-[#433422]'
+                    : 'bg-white/90 hover:bg-white text-gray-700'
+                  }`}
+                onClick={handleAddToCart}
+                disabled={isAddingToCart}
+              >
+                {isAdded ? (
+                  <RiCheckLine 
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
+                      ${currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-white'}`}
+                  />
+                ) : (
+                  <RiShoppingCart2Line 
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300
+                      ${isAddingToCart ? 'animate-pulse' : ''}`}
+                  />
+                )}
+              </button>
+            </div>
+            {/* Out of stock overlay */}
+            {product.stock <= 0 && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <span className="text-white text-xs font-medium px-2 py-0.5 rounded-full bg-red-500">
+                  Out of Stock
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="p-3 sm:p-4">
+            <h3 className={`text-sm sm:text-base font-medium mb-1 line-clamp-2 ${
+              currentTheme === 'dark' ? 'text-white' 
+              : currentTheme === 'eyeCare' ? 'text-[#433422]'
+              : 'text-gray-900'
+            }`}>
+              {product.name}
+            </h3>
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className={`font-bold ${
+                currentTheme === 'dark' ? 'text-white' 
+                : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                : 'text-gray-900'
+              }`}>
+                Rs {product.salePrice?.toLocaleString()}
+              </span>
+              {product.marketPrice > product.salePrice && (
+                <span className={`text-sm line-through ${
+                  currentTheme === 'dark' ? 'text-gray-400' 
+                  : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                  : 'text-gray-500'
+                }`}>
+                  Rs {product.marketPrice?.toLocaleString()}
+                </span>
               )}
-            </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className={`text-xs ${
+                product.stock > 0 
+                  ? 'text-green-500' 
+                  : 'text-red-500'
+              }`}>
+                {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
+              </div>
+              {product.rating > 0 && (
+                <div className="flex items-center gap-1">
+                  <RiStarFill className="text-yellow-400" size={14} />
+                  <span className={`text-xs ${
+                    currentTheme === 'dark' ? 'text-gray-300' 
+                    : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                    : 'text-gray-600'
+                  }`}>
+                    {product.rating.toFixed(1)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Use portal to render modal outside the component hierarchy */}
+      {isModalOpen && (
+        <div 
+          className="fixed inset-0 modal-overlay" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 99999,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)'
+          }}
+        >
+          <div className="modal-content" style={{ position: 'relative', zIndex: 100000 }}>
+            <ProductActionModal
+              isOpen={isModalOpen}
+              onClose={() => {
+                setIsModalOpen(false);
+                setSelectedColor(null);
+                setQuantity(1);
+              }}
+              product={transformedProduct}
+              selectedColor={selectedColor}
+              onColorSelect={handleColorSelect}
+              quantity={quantity}
+              setQuantity={setQuantity}
+              onAction={handleCartAction}
+              loading={loading}
+              currentTheme={currentTheme}
+              mode="cart"
+            />
           </div>
         </div>
-        <div className="p-2">
-          <h3 className="font-medium text-sm line-clamp-1 group-hover:text-blue-600 transition-colors duration-300">
-            {product.name}
-          </h3>
-          <p className="text-xs opacity-75 mb-1 line-clamp-1">
-            {product.description?.length > 25 
-              ? `${product.description.substring(0, 25)}...` 
-              : product.description}
-          </p>
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-sm text-black">
-              Rs {product.price.toLocaleString('en-PK')}
-            </span>
-          </div>
-        </div>
-      </Link>
-    </div>
+      )}
+    </>
   );
 };
+
+// Add this CSS to ensure modal appears correctly
+const modalStyles = `
+  <style>
+    .modal-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    
+    @media (max-width: 768px) {
+      .modal-container {
+        align-items: flex-end;
+      }
+    }
+    
+    /* Ensure modal overlay is above everything */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 9999;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Ensure modal content is above the overlay */
+    .modal-content {
+      position: relative;
+      z-index: 10000;
+    }
+  </style>
+`;
 
 const CategoryProducts = () => {
   const { currentTheme } = useTheme();
@@ -314,7 +604,7 @@ const CategoryProducts = () => {
     const fetchWishlist = async () => {
       try {
         const token = localStorage.getItem('authToken');
-        const response = await fetch('http://192.168.100.17:5000/api/wishlist', {
+        const response = await fetch('https://api.nearglow.com/api/wishlist', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -435,6 +725,7 @@ const CategoryProducts = () => {
 
   // Define handleViewAllClick before using it
   const handleViewAllClick = (subcategory) => {
+    // Get userId from localStorage or use an empty string if not available
     const userId = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user'))._id : '';
     navigate(`/${userId}/categories/${categoryId}/subcategory/${encodeURIComponent(subcategory)}`);
   };
@@ -507,6 +798,64 @@ const CategoryProducts = () => {
     // ... rest of wishlist logic
   };
 
+  // Add the modal styles to the document head
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = modalStyles;
+    document.head.appendChild(styleElement);
+    
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
+
+  // Add this to ensure modals appear on top of everything
+  useEffect(() => {
+    // Add a style tag to ensure modals are on top
+    const styleTag = document.createElement('style');
+    styleTag.innerHTML = `
+      .modal-overlay {
+        position: fixed !important;
+        z-index: 10000 !important;
+      }
+      
+      /* When modal is open, reduce z-index of other elements */
+      body.modal-open .sticky {
+        z-index: 10 !important;
+      }
+    `;
+    document.head.appendChild(styleTag);
+    
+    return () => {
+      document.head.removeChild(styleTag);
+    };
+  }, []);
+
+  // Add effect to handle body class when modal is open
+  useEffect(() => {
+    const handleModalState = () => {
+      // Check if any modal is open in the component
+      const isAnyModalOpen = document.querySelector('.modal-overlay') !== null;
+      
+      if (isAnyModalOpen) {
+        document.body.classList.add('modal-open');
+      } else {
+        document.body.classList.remove('modal-open');
+      }
+    };
+    
+    // Run initially and set up a mutation observer to detect modal changes
+    handleModalState();
+    
+    const observer = new MutationObserver(handleModalState);
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    return () => {
+      observer.disconnect();
+      document.body.classList.remove('modal-open');
+    };
+  }, []);
+
   if (loading) {
     return <SkeletonLoader />;
   }
@@ -519,8 +868,8 @@ const CategoryProducts = () => {
         : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3] text-[#433422]'
         : 'bg-gray-50 text-gray-900'
       }`}>
-        {/* Modern Professional Header - Adjusted z-index */}
-        <div className={`w-full sticky top-0 z-30 ${
+        {/* Modern Professional Header - Reduced z-index */}
+        <div className={`w-full sticky top-0 z-20 ${
           currentTheme === 'dark' ? 'bg-gray-900/80' 
           : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3]/80'
           : 'bg-white/80'
@@ -534,7 +883,7 @@ const CategoryProducts = () => {
               {/* Navigation Path */}
               <div className="flex items-center gap-3 text-sm mb-1">
                 <Link 
-                  to="/678080b2866f4d46dad8a25b/categories"
+                  to={`/categories`}
                   className={`hover:text-blue-500 transition-colors flex items-center gap-2 ${
                     currentTheme === 'dark' ? 'text-gray-400 hover:text-white' 
                     : currentTheme === 'eyeCare' ? 'text-[#433422]/70 hover:text-[#433422]'
@@ -614,8 +963,8 @@ const CategoryProducts = () => {
           </div>
         </div>
 
-        {/* Search and Filters - Adjusted z-index */}
-        <div className="max-w-7xl mx-auto px-4 pt-6 relative z-20">
+        {/* Search and Filters - Reduced z-index */}
+        <div className="max-w-7xl mx-auto px-4 pt-6 relative z-10">
           <div className="relative">
             <div className={`flex items-center gap-2 p-2 rounded-xl ${
               currentTheme === 'dark' ? 'bg-gray-800/50' 
@@ -646,7 +995,7 @@ const CategoryProducts = () => {
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className={`absolute z-40 mt-2 w-full rounded-xl p-4 shadow-lg ${
+                className={`absolute z-30 mt-2 w-full rounded-xl p-4 shadow-lg ${
                   currentTheme === 'dark' ? 'bg-gray-800' 
                   : currentTheme === 'eyeCare' ? 'bg-[#E6D5BC]'
                   : 'bg-white'
@@ -887,7 +1236,7 @@ const CategoryProducts = () => {
         </div>
 
         {/* Products Display - Base z-index */}
-        <div className="max-w-[1920px] mx-auto py-8 relative z-10">
+        <div className="max-w-[1920px] mx-auto py-8 relative z-0">
           {Object.keys(productsBySubcategory).length > 0 ? (
             Object.entries(productsBySubcategory).map(([subcategory, products]) => (
               products.length > 0 && (

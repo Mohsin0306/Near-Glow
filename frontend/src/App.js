@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import BuyerDashboard from './pages/BuyerDashboard';
 import Header from './components/layout/Header';
 import Banner from './components/seller-dashboard/Banner';
-import SearchBar from './components/seller-dashboard/SearchBar';
+import CampaignCircles from './components/seller-dashboard/CampaignCircles';
 import Products from './components/seller-dashboard/Products';
 import Categories from './components/seller-dashboard/Categories';
 import ProductDetail from './components/seller-dashboard/ProductDetail';
@@ -44,9 +44,20 @@ import NotificationDetail from './components/seller-dashboard/NotificationDetail
 import AdminBanner from './components/admin_dashboard/AdminBanner';
 import FloatingContact from './components/FloatingContact';
 import Team from './components/Team';
+import axios from 'axios';
+import { toast } from 'react-hot-toast';
+import DirectCheckoutPage from './components/seller-dashboard/checkout/DirectCheckoutPage';
+import config from './config/config';
+import CampaignManager from './components/admin_dashboard/campaigns/CampaignManager';
+import CampaignDetail from './components/admin_dashboard/campaigns/CampaignDetail';
+import CampaignDetailPage from './pages/CampaignDetailPage';
+
+// Replace hardcoded baseURL with dynamic configuration
+axios.defaults.baseURL = config.API_BASE_URL;
 
 function AppRoutes() {
   const { currentTheme } = useTheme();
+  const location = useLocation();
   const [cartItems, setCartItems] = useState([]);
   const [cartLoading, setCartLoading] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
@@ -54,10 +65,44 @@ function AppRoutes() {
   // Add this temporarily to debug
   useEffect(() => {
     console.log('Environment Variables:', {
-      API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
-      BACKEND_URL: process.env.REACT_APP_BACKEND_URL,
-      NETWORK_URL: process.env.REACT_APP_NETWORK_URL
+      API_BASE_URL: config.API_BASE_URL,
+      BACKEND_URL: config.BACKEND_URL,
+      NETWORK_URL: config.NETWORK_URL
     });
+  }, []);
+
+  // Update the error handling useEffect
+  useEffect(() => {
+    // Configure axios defaults - use config instead of hardcoded values
+    axios.defaults.baseURL = config.API_BASE_URL;
+    axios.defaults.headers.common['Content-Type'] = 'application/json';
+    
+    const handleErrors = (error) => {
+      if (error.response) {
+        console.error('API Error:', error.response.data);
+        toast.error(error.response.data.message || 'An error occurred');
+      } else if (error.request) {
+        console.error('Network Error:', error.request);
+        toast.error('Cannot connect to server. Please check your connection.');
+      } else {
+        console.error('Error:', error.message);
+        toast.error('An unexpected error occurred');
+      }
+    };
+
+    // Add global error handler
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      error => {
+        handleErrors(error);
+        return Promise.reject(error);
+      }
+    );
+
+    // Cleanup function
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
   }, []);
 
   // Props objects for components
@@ -68,7 +113,7 @@ function AppRoutes() {
     setCartLoading
   };
 
-  // Create shared props for SearchBar and Products
+  // Create shared props for Products
   const categoryProps = {
     selectedCategories,
     setSelectedCategories,
@@ -76,9 +121,18 @@ function AppRoutes() {
   };
 
   return (
-    <div className={`min-h-screen ${currentTheme === 'dark' ? 'dark' : ''}`}>
+    <div className={`min-h-screen ${
+      currentTheme === 'dark' ? 'bg-gray-900 text-white' 
+      : currentTheme === 'eyeCare' ? 'bg-[#F5E6D3] text-[#433422]'
+      : 'bg-gray-50 text-gray-900'
+    }`}>
       <NotificationListener />
       <Routes>
+        <Route path="/ref/:referralCode" element={<SignUp />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        <Route path="/register" element={<Navigate to="/signup" replace />} />
+        
         <Route path="/products" element={<Products {...categoryProps} />} />
         <Route path="/products/:productId" element={<ProductDetail {...cartProps} />} />
         <Route path="/categories" element={<Categories />} />
@@ -94,7 +148,7 @@ function AppRoutes() {
           <Route index element={
             <>
               <Banner />
-              <SearchBar {...categoryProps} />
+              <CampaignCircles />
               <Products {...categoryProps} />
             </>
           } />
@@ -105,10 +159,6 @@ function AppRoutes() {
           <Route path="categories/:categoryId" element={<CategoryProducts />} />
         </Route>
 
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
-        <Route path="/register" element={<Navigate to="/signup" replace />} />
-        
         <Route path="/:userId/admin/*" element={
           <PrivateRoute>
             <div className="flex">
@@ -124,6 +174,7 @@ function AppRoutes() {
                   <Route path="customers/:id" element={<CustomerDetails />} />
                   <Route path="orders" element={<AdminOrders/>} />
                   <Route path="orders/:id" element={<OrderDetail/>} />
+                  <Route path="campaigns" element={<CampaignManager />} />
                   <Route path="analytics" element={<div>Analytics Coming Soon</div>} />
                   <Route path="notifications" element={<AdminNotifications />} />
                   <Route path="notifications/received" element={<ReceivedNotifications />} />
@@ -133,10 +184,21 @@ function AppRoutes() {
                   <Route path="transactions" element={<div>Transactions Coming Soon</div>} />
                   <Route path="support" element={<div>Support Coming Soon</div>} />
                   <Route path="settings" element={<ProfileA />} />
+                  <Route path="campaigns/:id" element={<CampaignDetail />} />
                 </Routes>
               </main>
               <FloatingContact />
             </div>
+          </PrivateRoute>
+        } />
+
+        <Route path="/:userId/direct-checkout" element={
+          <PrivateRoute>
+            <Header className="fixed top-0 w-full z-50" />
+            <div className="pt-16 pb-24 md:pb-0">
+              <DirectCheckoutPage />
+            </div>
+            <FloatingContact />
           </PrivateRoute>
         } />
 
@@ -152,7 +214,7 @@ function AppRoutes() {
           <Route index element={
             <>
               <Banner />
-              <SearchBar {...categoryProps} />
+              <CampaignCircles />
               <Products {...categoryProps} />
             </>
           } />
@@ -165,6 +227,12 @@ function AppRoutes() {
 
           <Route path="cart" element={<CartPage {...cartProps} />} />
           <Route path="checkout" element={<CheckoutPage {...cartProps} />} />
+          <Route path="order-confirmation/:orderId" element={
+            <OrderConfirmation 
+              currentTheme={currentTheme} 
+              isMobile={window.innerWidth < 1024}
+            />
+          } />
           <Route path="settings" element={<Settings />} />
           <Route path="profile" element={<Profile />} />
           <Route path="alerts/*" element={
@@ -178,8 +246,6 @@ function AppRoutes() {
               <Route path="wishlist" element={<Wishlist />} />
             </Routes>
           } />
-          <Route path="checkout/confirmation" element={<OrderConfirmation currentTheme={currentTheme} />} />
-
           <Route path="team" element={
             <div className="pt-16 pb-24 md:pb-0">
               <Team />
@@ -204,6 +270,18 @@ function AppRoutes() {
             </div>
             <FloatingContact />
           </>
+        } />
+
+        <Route path="/campaign/:id" element={
+          <>
+            <CampaignDetailPage />
+          </>
+        } />
+
+        <Route path="/:userId/campaign/:id" element={
+          <PrivateRoute>
+            <CampaignDetailPage />
+          </PrivateRoute>
         } />
       </Routes>
     </div>

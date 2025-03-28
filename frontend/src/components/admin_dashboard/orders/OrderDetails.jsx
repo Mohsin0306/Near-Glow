@@ -344,20 +344,64 @@ const OrderDetails = () => {
             Payment Details
           </Typography>
           <Grid container spacing={1} sx={{ fontSize: '0.875rem' }}>
+            <Grid item xs={12}>
+              <Typography variant="body2" sx={{ color: customTheme.textSecondary }}>
+                Subtotal: {formatCurrency(order.totalAmount || 0)}
+              </Typography>
+            </Grid>
+            
+            {(order.deliveryPrice > 0) && (
+              <Grid item xs={12}>
+                <Typography variant="body2" sx={{ color: customTheme.textSecondary }}>
+                  Delivery Fee: {formatCurrency(order.deliveryPrice)}
+                </Typography>
+              </Grid>
+            )}
+            
+            {(order.referralDiscount > 0) && (
+              <Grid item xs={12}>
+                <Typography variant="body2" sx={{ color: 'success.main' }}>
+                  Referral Discount: -{formatCurrency(order.referralDiscount)}
+                </Typography>
+              </Grid>
+            )}
+            
+            <Grid item xs={12}>
+              <Typography 
+                variant="body1" 
+                sx={{ 
+                  color: customTheme.text,
+                  fontWeight: 600,
+                  mt: 1
+                }}
+              >
+                Final Amount: {formatCurrency(order.finalAmount || order.totalAmount)}
+              </Typography>
+            </Grid>
+
             <Grid item xs={6}>
               <Typography variant="body2" sx={{ color: customTheme.text }}>
-                Method: {order.paymentMethod?.toUpperCase()}
+                Method: {order.paymentMethod?.toUpperCase() || 'N/A'}
               </Typography>
             </Grid>
             <Grid item xs={6}>
               <Typography variant="body2" sx={{ color: customTheme.text }}>
-                Status: {order.paymentDetails?.status?.toUpperCase()}
+                Status: {order.paymentDetails?.status?.toUpperCase() || 'PENDING'}
               </Typography>
             </Grid>
+            
             {order.paymentDetails?.transactionId && (
               <Grid item xs={12}>
                 <Typography variant="body2" sx={{ color: customTheme.textSecondary }}>
                   Transaction ID: {order.paymentDetails.transactionId}
+                </Typography>
+              </Grid>
+            )}
+            
+            {order.coinsUsed > 0 && (
+              <Grid item xs={12}>
+                <Typography variant="body2" sx={{ color: customTheme.textSecondary }}>
+                  Referral Coins Used: {order.coinsUsed}
                 </Typography>
               </Grid>
             )}

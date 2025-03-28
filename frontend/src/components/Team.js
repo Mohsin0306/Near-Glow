@@ -25,9 +25,9 @@ const Team = () => {
     {
       name: "Hammad Ahmed",
       role: "Graphic Designer",
-      image: "/images/hammad.jpg",
+      image: "/images/graphic.jpeg",
       description: "Creative lead handling all visual aspects and branding",
-      portfolio: "https://hammad-portfolio.com"
+      portfolio: "#"
     }
   ];
 

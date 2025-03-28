@@ -11,6 +11,25 @@ const ProductCard = ({ product, onEdit, onDelete, isLoading }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // Early return if product is not defined
+  if (!product) {
+    return null;
+  }
+
+  // Format price with fallback values
+  const formatPrice = (price) => {
+    return typeof price === 'number' ? price.toLocaleString('en-PK') : '0';
+  };
+
+  // Safely get discount percentage
+  const getDiscountPercentage = () => {
+    if (product.marketPrice && product.salePrice) {
+      const discount = ((product.marketPrice - product.salePrice) / product.marketPrice) * 100;
+      return Math.round(discount);
+    }
+    return 0;
+  };
+
   const handleEdit = (e) => {
     e.stopPropagation();
     onEdit(product); // This will trigger the edit modal with the product data
@@ -34,13 +53,13 @@ const ProductCard = ({ product, onEdit, onDelete, isLoading }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`group relative overflow-hidden rounded-2xl cursor-pointer ${
+      className={`group relative overflow-hidden rounded-xl cursor-pointer w-full max-w-[280px] ${
         currentTheme === 'dark' 
           ? 'bg-gray-800/80 hover:bg-gray-800' 
           : currentTheme === 'eyeCare'
           ? 'bg-[#E6D5BC] hover:bg-[#E6D5BC]/90'
           : 'bg-white hover:bg-white/90'
-      } shadow-lg hover:shadow-xl transition-all duration-300`}
+      } shadow-md hover:shadow-lg transition-all duration-300`}
       onClick={handleCardClick}
     >
       {/* Loading Overlay */}
@@ -52,37 +71,37 @@ const ProductCard = ({ product, onEdit, onDelete, isLoading }) => {
         </div>
       )}
 
-      {/* Product Image */}
-      <div className="relative aspect-square">
+      {/* Product Image with Actions */}
+      <div className="relative aspect-[4/3]">
         <img 
           src={product.media?.find(m => m.type === 'image')?.url || '/placeholder.jpg'}
           alt={product.name}
-          className="w-full h-full object-cover rounded-t-2xl"
+          className="w-full h-full object-cover"
         />
         
-        {/* Desktop Actions (hover) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden lg:block">
-          <div className="absolute bottom-4 right-4 flex gap-2 transform translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+        {/* Desktop Actions */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden lg:flex items-end justify-end p-3">
+          <div className="flex gap-2">
             <button
               onClick={handleEdit}
-              className="p-2 bg-white/20 rounded-xl backdrop-blur-md hover:bg-white/30 transition-all duration-300"
+              className="p-2 bg-white/20 rounded-lg backdrop-blur-md hover:bg-white/30 transition-all duration-300"
             >
-              <RiEditLine size={18} className="text-white" />
+              <RiEditLine size={16} className="text-white" />
             </button>
             <button
               onClick={handleDelete}
-              className="p-2 bg-white/20 rounded-xl backdrop-blur-md hover:bg-red-400/30 transition-all duration-300"
+              className="p-2 bg-white/20 rounded-lg backdrop-blur-md hover:bg-red-400/30 transition-all duration-300"
             >
-              <RiDeleteBinLine size={18} className="text-white" />
+              <RiDeleteBinLine size={16} className="text-white" />
             </button>
           </div>
         </div>
 
-        {/* Mobile Actions (always visible) */}
+        {/* Mobile Actions */}
         <div className="absolute top-2 right-2 flex gap-2 lg:hidden">
           <button
             onClick={handleEdit}
-            className={`p-2 rounded-xl backdrop-blur-md 
+            className={`p-1.5 rounded-lg backdrop-blur-md 
               ${currentTheme === 'dark' 
                 ? 'bg-gray-800/80 text-white' 
                 : currentTheme === 'eyeCare'
@@ -90,24 +109,25 @@ const ProductCard = ({ product, onEdit, onDelete, isLoading }) => {
                 : 'bg-white/80 text-gray-700'
               } shadow-sm active:scale-95 transition-all duration-200`}
           >
-            <RiEditLine size={18} />
+            <RiEditLine size={16} />
           </button>
           <button
             onClick={handleDelete}
-            className={`p-2 rounded-xl backdrop-blur-md shadow-sm active:scale-95 transition-all duration-200
+            className={`p-1.5 rounded-lg backdrop-blur-md shadow-sm active:scale-95 transition-all duration-200
               ${currentTheme === 'eyeCare'
                 ? 'bg-[#433422]/80 text-white'
                 : 'bg-red-500/80 text-white'
               }`}
           >
-            <RiDeleteBinLine size={18} />
+            <RiDeleteBinLine size={16} />
           </button>
         </div>
       </div>
 
       {/* Product Info */}
-      <div className="p-4 space-y-2">
-        <h3 className={`text-sm font-semibold truncate ${
+      <div className="p-3 space-y-1.5">
+        {/* Title */}
+        <h3 className={`text-sm font-medium leading-tight truncate ${
           currentTheme === 'dark' ? 'text-white' 
           : currentTheme === 'eyeCare' ? 'text-[#433422]'
           : 'text-gray-900'
@@ -115,20 +135,48 @@ const ProductCard = ({ product, onEdit, onDelete, isLoading }) => {
           {product.name}
         </h3>
         
+        {/* Pricing Row */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-sm font-bold ${
+              currentTheme === 'dark' ? 'text-white' 
+              : currentTheme === 'eyeCare' ? 'text-[#433422]'
+              : 'text-gray-900'
+            }`}>
+              Rs {formatPrice(product.salePrice)}
+            </span>
+            {product.marketPrice > product.salePrice && (
+              <span className={`text-xs line-through ${
+                currentTheme === 'dark' ? 'text-gray-400' 
+                : currentTheme === 'eyeCare' ? 'text-[#433422]/70'
+                : 'text-gray-500'
+              }`}>
+                Rs {formatPrice(product.marketPrice)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Discount and Status Row */}
         <div className="flex items-center justify-between">
-          <p className={`text-sm font-bold ${
-            currentTheme === 'dark' ? 'text-white' 
-            : currentTheme === 'eyeCare' ? 'text-[#433422]'
-            : 'text-gray-900'
-          }`}>
-            Rs: {product.price.toLocaleString('en-IN')}
-          </p>
-          <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-            product.stock > 0
+          <div className="flex items-center gap-2">
+            {getDiscountPercentage() > 0 && (
+              <span className="text-xs font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                {getDiscountPercentage()}% OFF
+              </span>
+            )}
+            {(product.deliveryPrice || 0) === 0 && (
+              <span className="text-xs text-green-600 font-medium">
+                Free Delivery
+              </span>
+            )}
+          </div>
+          <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+            (product.stock || 0) > 0
               ? 'bg-green-100 text-green-800'
               : 'bg-red-100 text-red-800'
           }`}>
-            {product.stock > 0 ? 'In Stock' : 'Out'}
+            {(product.stock || 0) > 0 ? 'In Stock' : 'Out'}
           </div>
         </div>
       </div>

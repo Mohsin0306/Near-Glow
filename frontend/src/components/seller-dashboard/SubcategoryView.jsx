@@ -13,7 +13,7 @@ const SubcategoryView = () => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://192.168.100.17:5000/api/products/category/${categoryId}`);
+        const response = await fetch(`https://api.nearglow.com/api/products/category/${categoryId}`);
         const data = await response.json();
         
         if (data.success) {

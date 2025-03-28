@@ -115,11 +115,55 @@ const productSchema = new mongoose.Schema({
   orderCount: {
     type: Number,
     default: 0
-  }
+  },
+  marketPrice: {
+    type: Number,
+    required: [true, 'Market price is required'],
+    min: 0
+  },
+  salePrice: {
+    type: Number,
+    required: [true, 'Sale price is required'],
+    min: 0
+  },
+  deliveryPrice: {
+    type: Number,
+    required: [true, 'Delivery price is required'],
+    min: 0,
+    default: 0
+  },
+  discountPercentage: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
+  colors: [{
+    name: String,
+    media: [{
+      type: {
+        type: String,
+        enum: ['image', 'video'],
+        required: true
+      },
+      public_id: String,
+      url: String,
+      thumbnail: String
+    }]
+  }]
 });
 
 // Update timestamp on save
 productSchema.pre('save', async function(next) {
+  // Calculate discount percentage if market price and sale price are set
+  if (this.marketPrice && this.salePrice) {
+    const discount = ((this.marketPrice - this.salePrice) / this.marketPrice) * 100;
+    this.discountPercentage = Math.round(discount * 100) / 100; // Round to 2 decimal places
+  }
+  
+  // Set the price field to salePrice for backward compatibility
+  this.price = this.salePrice;
+  
   this.updatedAt = Date.now();
   
   if (this.isNew && this.status === 'published') {
@@ -212,6 +256,11 @@ productSchema.pre('save', async function(next) {
   
   if (this.isModified('orderCount')) {
     console.log(`Product ${this._id} order count updated to ${this.orderCount}`);
+  }
+  
+  // Ensure deliveryPrice is set
+  if (!this.deliveryPrice && this.deliveryPrice !== 0) {
+    this.deliveryPrice = 0;
   }
   
   next();

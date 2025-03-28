@@ -14,12 +14,14 @@ import {
   RiGiftLine,
   RiDeleteBin2Line,
   RiCloseLine,
-  RiAlertLine
+  RiAlertLine,
+  RiCheckLine
 } from 'react-icons/ri';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
+import { cartAPI } from '../../utils/api';
 
 const formatCurrency = (amount) => {
   return `Rs ${amount.toLocaleString('en-PK')}`;
@@ -34,6 +36,8 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
   const [showClearModal, setShowClearModal] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const user_id = user._id;
+  const [selectedItems, setSelectedItems] = useState(new Set());
+  const [checkoutError, setCheckoutError] = useState(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -62,7 +66,8 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
           price: item.price,
           quantity: item.quantity,
           image: item.product.media[0]?.url,
-          category: item.product.category?.name || 'Uncategorized'
+          category: item.product.category?.name || 'Uncategorized',
+          selectedColor: item.selectedColor
         })) || [];
         
         setCartItems(formattedItems);
@@ -209,7 +214,6 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
       }
     } catch (error) {
       console.error('Error adding to cart:', error);
-      toast.error(error.response?.data?.message || 'Failed to add item to cart');
     } finally {
       setIsUpdating(false);
     }
@@ -218,6 +222,22 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const shipping = subtotal > 150 ? 0 : 12.00;
   const total = subtotal + shipping;
+
+  // Calculate totals for selected items
+  const calculateSelectedTotal = () => {
+    return cartItems
+      .filter(item => {
+        const selectionKey = item.selectedColor ? 
+          `${item.id}-${item.selectedColor.name}` : 
+          item.id;
+        return selectedItems.has(selectionKey);
+      })
+      .reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  };
+
+  const calculateShipping = (subtotal) => {
+    return subtotal > 30000 ? 0 : 500; // Free shipping over Rs 30,000
+  };
 
   // Add the Clear Cart Modal component
   const ClearCartModal = () => (
@@ -323,9 +343,270 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
   );
 
   // Update the proceed to checkout button handler
-  const handleCheckout = () => {
-    navigate(`/${userId}/checkout`);
+  const handleProceedToCheckout = async () => {
+    try {
+      setIsUpdating(true);
+      
+      // Validate that at least one item is selected
+      if (selectedItems.size === 0) {
+        toast.error('Please select at least one item to checkout');
+        return;
+      }
+
+      // Get selected items with their colors
+      const selectedProducts = cartItems.filter(item => {
+        const selectionKey = item.selectedColor ? 
+          `${item.id}-${item.selectedColor.name}` : 
+          item.id;
+        return selectedItems.has(selectionKey);
+      }).map(item => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.selectedColor?.media?.url || item.image,
+        selectedColor: item.selectedColor,
+        displayTitle: item.selectedColor ? 
+          `${item.title} (${item.selectedColor.name})` : 
+          item.title
+      }));
+
+      // Calculate totals
+      const subtotal = selectedProducts.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      const shipping = calculateShipping(subtotal);
+      const total = subtotal + shipping;
+
+      // Navigate to checkout with selected items
+      navigate(`/${userId}/checkout`, {
+        state: {
+          items: selectedProducts,
+          subtotal,
+          shipping,
+          total,
+          selectedItemIds: Array.from(selectedItems)
+        },
+        replace: false // This ensures we don't replace the current history entry
+      });
+
+    } catch (error) {
+      console.error('Checkout error:', error);
+      setCheckoutError(error.response?.data?.message || 'Failed to proceed to checkout');
+      toast.error(error.response?.data?.message || 'Failed to proceed to checkout');
+    } finally {
+      setIsUpdating(false);
+    }
   };
+
+  // Update the Order Summary section to show selected items total
+  const renderOrderSummary = () => (
+    <div className="space-y-4 mb-6">
+      <div className="flex justify-between">
+        <span className="opacity-60">Subtotal ({selectedItems.size} items)</span>
+        <span className="font-medium">
+          {formatCurrency(calculateSelectedTotal())}
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span className="opacity-60">Shipping</span>
+        <span className="font-medium">
+          {calculateShipping(calculateSelectedTotal()) === 0 
+            ? 'FREE' 
+            : formatCurrency(calculateShipping(calculateSelectedTotal()))}
+        </span>
+      </div>
+      <div className="h-px bg-current opacity-10" />
+      <div className="flex justify-between">
+        <span className="font-medium">Total</span>
+        <span className="font-medium">
+          {formatCurrency(
+            calculateSelectedTotal() + 
+            calculateShipping(calculateSelectedTotal())
+          )}
+        </span>
+      </div>
+    </div>
+  );
+
+  // Update the checkout button to be disabled if no items selected
+  const renderCheckoutButton = () => (
+    <motion.button
+      whileTap={{ scale: 0.98 }}
+      onClick={handleProceedToCheckout}
+      disabled={selectedItems.size === 0 || isUpdating}
+      className={`w-full py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 ${
+        currentTheme === 'dark' 
+          ? 'bg-white text-gray-900 hover:bg-gray-100' 
+          : currentTheme === 'eyeCare'
+          ? 'bg-[#433422] text-[#F5E6D3] hover:bg-[#433422]/90'
+          : 'bg-gray-900 text-white hover:bg-gray-800'
+      } ${selectedItems.size === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      <span>{isUpdating ? 'Processing...' : `Checkout (${selectedItems.size} items)`}</span>
+      {!isUpdating && <RiArrowRightLine size={20} />}
+    </motion.button>
+  );
+
+  const handleToggleSelection = async (itemId, selectedColor) => {
+    try {
+      setIsUpdating(true);
+      const selectionKey = selectedColor ? `${itemId}-${selectedColor.name}` : itemId;
+      const isSelected = !selectedItems.has(selectionKey);
+      
+      // Modify the API call to properly send the color data
+      const response = await axios.put(
+        'http://192.168.100.17:5000/api/cart/toggle-selection',
+        {
+          productId: itemId,
+          selected: isSelected,
+          selectedColor: selectedColor ? {
+            name: selectedColor.name,
+            media: selectedColor.media
+          } : null
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
+      );
+
+      if (response.data.success) {
+        if (isSelected) {
+          setSelectedItems(prev => new Set([...prev, selectionKey]));
+        } else {
+          setSelectedItems(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(selectionKey);
+            return newSet;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Selection error:', error);
+      toast.error(error.response?.data?.message || 'Failed to update item selection');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const renderCartItem = (item) => (
+    <motion.div
+      key={`${item.id}-${item.selectedColor?.name || 'default'}`}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`p-4 rounded-xl mb-4 ${
+        currentTheme === 'dark' 
+          ? 'bg-gray-800/50 backdrop-blur-xl border border-gray-700' 
+          : currentTheme === 'eyeCare' 
+          ? 'bg-[#E6D5BC]/50 backdrop-blur-xl border border-[#D4C3AA]'
+          : 'bg-white/50 backdrop-blur-xl border border-gray-100'
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        {/* Checkbox */}
+        <div 
+          onClick={() => handleToggleSelection(item.id, item.selectedColor)}
+          className={`w-5 h-5 rounded border cursor-pointer flex items-center justify-center transition-colors ${
+            selectedItems.has(item.selectedColor ? `${item.id}-${item.selectedColor.name}` : item.id)
+              ? currentTheme === 'dark'
+                ? 'bg-white border-white text-gray-900'
+                : currentTheme === 'eyeCare'
+                ? 'bg-[#433422] border-[#433422] text-[#F5E6D3]'
+                : 'bg-gray-900 border-gray-900 text-white'
+              : currentTheme === 'dark'
+              ? 'border-gray-600'
+              : currentTheme === 'eyeCare'
+              ? 'border-[#433422]'
+              : 'border-gray-300'
+          }`}
+        >
+          {selectedItems.has(item.selectedColor ? `${item.id}-${item.selectedColor.name}` : item.id) && <RiCheckLine size={16} />}
+        </div>
+
+        {/* Product Image - Now uses color-specific image if available */}
+        <motion.div 
+          whileHover={{ scale: 1.05 }}
+          className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0"
+          onClick={() => navigate(`/${user._id}/products/${item.id}?from=cart`)}
+        >
+          <img 
+            src={item.selectedColor?.media?.url || item.image} 
+            alt={item.title}
+            className="w-full h-full object-contain"
+          />
+        </motion.div>
+
+        {/* Product Details */}
+        <div className="flex-1 min-w-0">
+          <h3 
+            className="font-medium mb-1 truncate cursor-pointer hover:opacity-80"
+            onClick={() => navigate(`/${user._id}/products/${item.id}?from=cart`)}
+          >
+            {item.title}
+            {item.selectedColor && (
+              <span className={`ml-2 text-sm ${
+                currentTheme === 'dark' ? 'text-gray-400' 
+                : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                : 'text-gray-500'
+              }`}>
+                ({item.selectedColor.name})
+              </span>
+            )}
+          </h3>
+
+          {/* Category */}
+          {item.category !== 'Uncategorized' && (
+            <p className="text-xs md:text-sm opacity-60 mb-2">{item.category}</p>
+          )}
+
+          {/* Quantity and Price Controls */}
+          <div className="flex items-center gap-4">
+            <div className={`flex items-center rounded-lg ${
+              currentTheme === 'dark' ? 'bg-gray-700' 
+              : currentTheme === 'eyeCare' ? 'bg-[#D4C3AA]'
+              : 'bg-gray-100'
+            }`}>
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={() => updateQuantity(item.id, -1)}
+                className="p-1 hover:opacity-70"
+              >
+                <RiSubtractLine size={isMobile ? 16 : 18} />
+              </motion.button>
+              <span className="w-8 text-center font-medium text-sm md:text-base">
+                {item.quantity}
+              </span>
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={() => updateQuantity(item.id, 1)}
+                className="p-1 hover:opacity-70"
+              >
+                <RiAddLine size={isMobile ? 16 : 18} />
+              </motion.button>
+            </div>
+            <p className="font-medium text-sm md:text-base">
+              {formatCurrency(item.price * item.quantity)}
+            </p>
+          </div>
+        </div>
+
+        {/* Delete Button */}
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => removeItem(item.id)}
+          className="p-2 rounded-full hover:bg-red-500/10 text-red-500"
+        >
+          <RiDeleteBinLine size={isMobile ? 18 : 20} />
+        </motion.button>
+      </div>
+    </motion.div>
+  );
 
   if (cartLoading) {
     return (
@@ -425,83 +706,7 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
               </div>
 
               <AnimatePresence>
-                {cartItems.map((item) => (
-                  <motion.div
-                    key={item.id}
-                    className="cart-item"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -100 }}
-                    className={`p-3 md:p-4 rounded-xl ${
-                      currentTheme === 'dark' 
-                        ? 'bg-gray-800/50 backdrop-blur-xl border border-gray-700' 
-                        : currentTheme === 'eyeCare' 
-                        ? 'bg-[#E6D5BC]/50 backdrop-blur-xl border border-[#D4C3AA]'
-                        : 'bg-white/50 backdrop-blur-xl border border-gray-100'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <motion.div 
-                        whileHover={{ scale: 1.05 }}
-                        className="w-16 h-16 md:w-24 md:h-24 rounded-lg overflow-hidden bg-white p-2 cursor-pointer"
-                        onClick={() => navigate(`/${user._id}/products/${item.id}?from=cart`)}
-                      >
-                        <img 
-                          src={item.image} 
-                          alt={item.title}
-                          className="w-full h-full object-contain"
-                        />
-                      </motion.div>
-                      <div className="flex-1 min-w-0">
-                        <h3 
-                          className="font-medium mb-1 truncate cursor-pointer hover:opacity-80"
-                          onClick={() => navigate(`/${user._id}/products/${item.id}?from=cart`)}
-                        >
-                          {item.title}
-                        </h3>
-                        {item.category !== 'Uncategorized' && (
-                          <p className="text-xs md:text-sm opacity-60 mb-2">{item.category}</p>
-                        )}
-                        <div className="flex items-center gap-4">
-                          <div className={`flex items-center rounded-lg ${
-                            currentTheme === 'dark' ? 'bg-gray-700' 
-                            : currentTheme === 'eyeCare' ? 'bg-[#D4C3AA]'
-                            : 'bg-gray-100'
-                          }`}>
-                            <motion.button 
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => updateQuantity(item.id, -1)}
-                              className="p-1 hover:opacity-70"
-                            >
-                              <RiSubtractLine size={isMobile ? 16 : 18} />
-                            </motion.button>
-                            <span className="w-8 text-center font-medium text-sm md:text-base">
-                              {item.quantity}
-                            </span>
-                            <motion.button 
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => updateQuantity(item.id, 1)}
-                              className="p-1 hover:opacity-70"
-                            >
-                              <RiAddLine size={isMobile ? 16 : 18} />
-                            </motion.button>
-                          </div>
-                          <p className="font-medium text-sm md:text-base">
-                            {formatCurrency(item.price * item.quantity)}
-                          </p>
-                        </div>
-                      </div>
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => removeItem(item.id)}
-                        className="p-2 rounded-full hover:bg-red-500/10 text-red-500"
-                      >
-                        <RiDeleteBinLine size={isMobile ? 18 : 20} />
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                ))}
+                {cartItems.map(item => renderCartItem(item))}
               </AnimatePresence>
 
               {/* Gift Message */}
@@ -527,9 +732,21 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
               {/* Features - Updated for mobile */}
               <div className="grid grid-cols-3 gap-2 mt-8">
                 {[
-                  { icon: <RiTruckLine size={20} />, text: "Free Shipping", subtext: "Over $150" },
-                  { icon: <RiSecurePaymentLine size={20} />, text: "Secure Pay", subtext: "By Stripe" },
-                  { icon: <RiShieldCheckLine size={20} />, text: "Money-Back", subtext: "30 Days" }
+                  { 
+                    icon: <RiTruckLine size={20} />, 
+                    text: "Free Shipping", 
+                    subtext: "Over ₨30,000" 
+                  },
+                  { 
+                    icon: <RiSecurePaymentLine size={20} />, 
+                    text: "Secure Pay", 
+                    subtext: "By Stripe" 
+                  },
+                  { 
+                    icon: <RiShieldCheckLine size={20} />, 
+                    text: "Money-Back", 
+                    subtext: "30 Days" 
+                  }
                 ].map((feature, index) => (
                   <motion.div
                     key={index}
@@ -575,40 +792,8 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
               >
                 <h2 className="text-xl font-serif mb-6">Order Summary</h2>
                 
-                <div className="space-y-4 mb-6">
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Subtotal</span>
-                    <span className="font-medium">{formatCurrency(subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Shipping</span>
-                    <span className="font-medium">
-                      {shipping === 0 ? 'FREE' : formatCurrency(shipping)}
-                    </span>
-                  </div>
-                  <div className="h-px bg-current opacity-10" />
-                  <div className="flex justify-between">
-                    <span className="font-medium">Total</span>
-                    <span className="font-medium">{formatCurrency(total)}</span>
-                  </div>
-                </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleCheckout}
-                  disabled={isUpdating}
-                  className={`w-full py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 ${
-                    currentTheme === 'dark' 
-                      ? 'bg-white text-gray-900 hover:bg-gray-100' 
-                      : currentTheme === 'eyeCare'
-                      ? 'bg-[#433422] text-[#F5E6D3] hover:bg-[#433422]/90'
-                      : 'bg-gray-900 text-white hover:bg-gray-800'
-                  } ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span>{isUpdating ? 'Processing...' : 'Proceed to Checkout'}</span>
-                  {!isUpdating && <RiArrowRightLine size={20} />}
-                </motion.button>
+                {renderOrderSummary()}
+                {renderCheckoutButton()}
               </motion.div>
             </div>
           </div>
@@ -616,11 +801,11 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
       </div>
 
       {/* Mobile Checkout Bar */}
-      {isMobile && cartItems.length > 0 && (
+      {isMobile && (
         <motion.div
           initial={{ y: 100 }}
           animate={{ y: 0 }}
-          className={`fixed bottom-[60px] left-0 right-0 px-4 py-3 z-40 ${
+          className={`fixed bottom-0 left-0 right-0 px-4 py-3 z-50 ${
             currentTheme === 'dark' 
               ? 'bg-gray-900/95 border-t border-gray-800' 
               : currentTheme === 'eyeCare' 
@@ -629,29 +814,34 @@ const CartPage = ({ cartItems, setCartItems, cartLoading, fetchCartData }) => {
           } backdrop-blur-lg`}
         >
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm opacity-70">Total:</span>
-              <span className="text-lg font-semibold">{formatCurrency(total)}</span>
+            <div className="flex flex-col">
+              <span className="text-xs opacity-70">Total:</span>
+              <span className="text-base font-semibold">
+                {formatCurrency(calculateSelectedTotal())}
+              </span>
             </div>
             <motion.button
               whileTap={{ scale: 0.98 }}
-              onClick={handleCheckout}
-              disabled={isUpdating}
-              className={`flex-shrink-0 py-2 px-4 rounded-xl font-medium flex items-center justify-center gap-2 ${
-                currentTheme === 'dark' 
-                  ? 'bg-white text-gray-900 hover:bg-gray-100' 
+              onClick={handleProceedToCheckout}
+              disabled={selectedItems.size === 0}
+              className={`py-2 px-4 rounded-xl text-sm font-medium flex items-center gap-1.5 ${
+                currentTheme === 'dark'
+                  ? 'bg-white text-gray-900 hover:bg-gray-100'
                   : currentTheme === 'eyeCare'
                   ? 'bg-[#433422] text-[#F5E6D3] hover:bg-[#433422]/90'
                   : 'bg-gray-900 text-white hover:bg-gray-800'
-              } ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${selectedItems.size === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <span className="text-sm">
-                {isUpdating ? 'Processing...' : 'Checkout'}
-              </span>
-              {!isUpdating && <RiArrowRightLine size={18} />}
+              <span>Checkout ({selectedItems.size})</span>
             </motion.button>
           </div>
         </motion.div>
+      )}
+
+      {checkoutError && (
+        <div className="text-red-500 mt-2">
+          {checkoutError}
+        </div>
       )}
     </div>
   );

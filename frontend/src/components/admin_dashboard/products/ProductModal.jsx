@@ -54,7 +54,9 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    price: '',
+    marketPrice: '',
+    salePrice: '',
+    deliveryPrice: '',
     category: '',
     brand: '',
     stock: '',
@@ -71,13 +73,17 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
   const [previewImages, setPreviewImages] = useState([]);
   const [previewVideos, setPreviewVideos] = useState([]);
   const [existingMedia, setExistingMedia] = useState([]);
+  const [colors, setColors] = useState([]);
+  const [colorImages, setColorImages] = useState({});
 
   useEffect(() => {
     if (initialData) {
       setFormData({
         name: initialData.name || '',
         description: initialData.description || '',
-        price: initialData.price || '',
+        marketPrice: initialData.marketPrice || '',
+        salePrice: initialData.salePrice || '',
+        deliveryPrice: initialData.deliveryPrice || '',
         category: initialData.category?._id || initialData.category || '',
         brand: initialData.brand || '',
         stock: initialData.stock || '',
@@ -108,7 +114,7 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.get('http://192.168.0.105:5000/api/categories');
+        const response = await axios.get('http://192.168.100.17:5000/api/categories');
         if (response.data.success) {
           setCategories(response.data.data || []);
         }
@@ -166,7 +172,9 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
     setFormData({
       name: '',
       description: '',
-      price: '',
+      marketPrice: '',
+      salePrice: '',
+      deliveryPrice: '',
       category: '',
       brand: '',
       stock: '',
@@ -210,19 +218,34 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
     try {
       const productData = new FormData();
       
-      // Add all form fields
+      // Add basic fields
       productData.append('name', formData.name);
       productData.append('description', formData.description);
-      productData.append('price', formData.price);
+      productData.append('marketPrice', formData.marketPrice);
+      productData.append('salePrice', formData.salePrice);
+      productData.append('deliveryPrice', formData.deliveryPrice);
       productData.append('category', formData.category);
       productData.append('brand', formData.brand);
       productData.append('stock', formData.stock);
       productData.append('status', formData.status);
-      productData.append('subcategories', JSON.stringify(formData.subcategories));
-      productData.append('specifications', JSON.stringify(formData.specifications));
-      productData.append('features', JSON.stringify(formData.features));
+      
+      // Add arrays as JSON strings
+      if (formData.specifications) {
+        productData.append('specifications', JSON.stringify(formData.specifications));
+      }
+      if (formData.features) {
+        productData.append('features', JSON.stringify(formData.features));
+      }
+      if (formData.subcategories) {
+        productData.append('subcategories', JSON.stringify(formData.subcategories));
+      }
 
-      // Handle media files
+      // Add colors data
+      if (colors.length > 0) {
+        productData.append('colors', JSON.stringify(colors));
+      }
+
+      // Add main product images/videos
       if (formData.media) {
         formData.media.forEach((mediaItem) => {
           if (mediaItem.file) {
@@ -235,16 +258,25 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
         });
       }
 
-      // Handle removed media
-      if (formData.removedMedia?.length > 0) {
-        productData.append('removedMedia', JSON.stringify(formData.removedMedia));
+      // Add color-specific images
+      Object.entries(colorImages).forEach(([colorName, images]) => {
+        if (colorName && images.length > 0) {
+          const fieldName = `colorImage_${colorName}`;
+          images.forEach(image => {
+            if (image.file) {
+              productData.append(fieldName, image.file);
+            }
+          });
+        }
+      });
+
+      // Log FormData for debugging
+      for (let pair of productData.entries()) {
+        console.log(pair[0], pair[1]);
       }
 
-      // Close modal immediately
-      handleClose();
-      
-      // Submit the form data
       await onSubmit(productData);
+      handleClose();
     } catch (error) {
       console.error('Error submitting product:', error);
       toast.error('Failed to save product');
@@ -353,6 +385,61 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
     setFormData(prev => ({
       ...prev,
       status: e.target.value
+    }));
+  };
+
+  const handleAddColor = () => {
+    const newColor = {
+      name: '',
+      media: []
+    };
+    setColors([...colors, newColor]);
+    setColorImages({ ...colorImages, '': [] });
+  };
+
+  const handleColorNameChange = (index, newName) => {
+    const oldName = colors[index].name;
+    const updatedColors = [...colors];
+    updatedColors[index].name = newName;
+    setColors(updatedColors);
+
+    // Update color images mapping
+    const updatedColorImages = { ...colorImages };
+    updatedColorImages[newName] = colorImages[oldName] || [];
+    delete updatedColorImages[oldName];
+    setColorImages(updatedColorImages);
+  };
+
+  const handleColorImageChange = (colorName, e) => {
+    const files = Array.from(e.target.files);
+    
+    const validFiles = files.filter(file => {
+      const isValidType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+      const isValidSize = file.size <= 5 * 1024 * 1024;
+      
+      if (!isValidType) toast.error(`${file.name} must be JPEG, PNG or WebP`);
+      if (!isValidSize) toast.error(`${file.name} must be under 5MB`);
+      
+      return isValidType && isValidSize;
+    });
+
+    if (validFiles.length === 0) return;
+
+    const newImages = validFiles.map(file => ({
+      file,
+      preview: URL.createObjectURL(file)
+    }));
+
+    setColorImages(prev => ({
+      ...prev,
+      [colorName]: [...(prev[colorName] || []), ...newImages]
+    }));
+  };
+
+  const handleRemoveColorImage = (colorName, index) => {
+    setColorImages(prev => ({
+      ...prev,
+      [colorName]: prev[colorName].filter((_, i) => i !== index)
     }));
   };
 
@@ -494,14 +581,42 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className={`block text-sm font-medium mb-2 ${theme.text}`}>
-                  Price (RS)
+                  Market Price (RS)
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  value={formData.marketPrice}
+                  onChange={(e) => setFormData({ ...formData, marketPrice: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl border ${theme.input} transition-all duration-200`}
+                  required
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${theme.text}`}>
+                  Sale Price (RS)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.salePrice}
+                  onChange={(e) => setFormData({ ...formData, salePrice: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl border ${theme.input} transition-all duration-200`}
+                  required
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${theme.text}`}>
+                  Delivery Price (RS)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.deliveryPrice}
+                  onChange={(e) => setFormData({ ...formData, deliveryPrice: e.target.value })}
                   className={`w-full px-4 py-2.5 rounded-xl border ${theme.input} transition-all duration-200`}
                   required
                 />
@@ -736,6 +851,82 @@ const ProductModal = ({ isOpen, onClose, onSubmit, initialData = null }) => {
                 />
               </label>
             )}
+          </div>
+        </div>
+
+        {/* Colors Section */}
+        <div className="mt-8">
+          <div className="flex justify-between items-center mb-4">
+            <h4 className={`text-lg font-semibold ${theme.text}`}>
+              Product Colors
+            </h4>
+            <button
+              type="button"
+              onClick={handleAddColor}
+              className={`px-4 py-2 rounded-xl bg-gradient-to-r ${theme.buttonPrimary}`}
+            >
+              + Add Color
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {colors.map((color, colorIndex) => (
+              <div key={colorIndex} className="p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-4 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Color name"
+                    value={color.name}
+                    onChange={(e) => handleColorNameChange(colorIndex, e.target.value)}
+                    className={`flex-1 px-4 py-2.5 rounded-xl border ${theme.input}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedColors = colors.filter((_, i) => i !== colorIndex);
+                      setColors(updatedColors);
+                      const { [color.name]: _, ...restColorImages } = colorImages;
+                      setColorImages(restColorImages);
+                    }}
+                    className="text-red-500 hover:text-red-600"
+                  >
+                    <RiCloseLine size={24} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {colorImages[color.name]?.map((image, imageIndex) => (
+                    <div key={imageIndex} className="relative aspect-square rounded-xl overflow-hidden group">
+                      <img
+                        src={image.preview}
+                        alt={`Color ${color.name} Preview ${imageIndex + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColorImage(color.name, imageIndex)}
+                          className="absolute top-2 right-2 p-1.5 bg-red-500 rounded-lg text-white hover:bg-red-600"
+                        >
+                          <RiCloseLine size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <label className={`cursor-pointer aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center ${theme.border} hover:border-blue-500 transition-all duration-200`}>
+                    <RiImageAddLine size={24} className={theme.textSecondary} />
+                    <span className={`text-sm mt-2 ${theme.textSecondary}`}>Add Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => handleColorImageChange(color.name, e)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </motion.div>

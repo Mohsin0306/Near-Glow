@@ -1,16 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { RiSecurePaymentLine, RiTruckLine, RiShieldCheckLine } from 'react-icons/ri';
+import { formatCurrency } from '../../../utils/api';
 
-const formatCurrency = (amount) => {
-  return `Rs ${amount.toLocaleString('en-PK')}`;
-};
-
-const OrderSummary = ({ cartItems, currentTheme, isMobile }) => {
-  const subtotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  const shipping = 0; // Free shipping
-  const total = subtotal + shipping;
-
+const OrderSummary = ({ cartItems = [], currentTheme, isMobile, subtotal = 0, shipping = 0, total = 0 }) => {
   return (
     <div className="space-y-4">
       <motion.div
@@ -28,19 +21,19 @@ const OrderSummary = ({ cartItems, currentTheme, isMobile }) => {
         
         <div className="space-y-3 mb-4">
           <div className="flex justify-between text-sm">
-            <span className="opacity-60">Subtotal</span>
-            <span className="font-medium">{formatCurrency(subtotal)}</span>
+            <span className="opacity-60">Subtotal ({(cartItems || []).length} items)</span>
+            <span>{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="opacity-60">Shipping</span>
-            <span className="font-medium">
-              {shipping === 0 ? 'FREE' : formatCurrency(shipping)}
-            </span>
+            <span className="opacity-60">Delivery Fee</span>
+            <span>{formatCurrency(shipping || cartItems[0]?.product?.deliveryPrice || 0)}</span>
           </div>
           <div className="h-px bg-current opacity-10" />
           <div className="flex justify-between">
             <span className="font-medium">Total</span>
-            <span className="font-medium">{formatCurrency(total)}</span>
+            <span className="font-medium">
+              {formatCurrency(total + (shipping || cartItems[0]?.product?.deliveryPrice || 0))}
+            </span>
           </div>
         </div>
 

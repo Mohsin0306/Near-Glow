@@ -85,7 +85,7 @@ const SearchBar = ({ onCategoryChange, selectedCategories }) => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.get('http://192.168.100.17:5000/api/categories');
+        const response = await axios.get('https://api.nearglow.com/api/categories');
         if (response.data.success) {
           const allCategories = response.data.data.reduce((acc, category) => {
             // Add main category

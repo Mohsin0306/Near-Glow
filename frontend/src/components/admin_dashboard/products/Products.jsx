@@ -137,10 +137,13 @@ const Products = () => {
         result.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         break;
       case 'price-high':
-        result.sort((a, b) => b.price - a.price);
+        result.sort((a, b) => b.salePrice - a.salePrice);
         break;
       case 'price-low':
-        result.sort((a, b) => a.price - b.price);
+        result.sort((a, b) => a.salePrice - b.salePrice);
+        break;
+      case 'discount-high':
+        result.sort((a, b) => b.discountPercentage - a.discountPercentage);
         break;
       default:
         break;
@@ -359,8 +362,9 @@ const Products = () => {
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
-                  <option value="price-high">Price: High to Low</option>
-                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Sale Price: High to Low</option>
+                  <option value="price-low">Sale Price: Low to High</option>
+                  <option value="discount-high">Discount: High to Low</option>
                 </select>
                 <RiArrowDownSLine 
                   className={`absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none
@@ -478,13 +482,14 @@ const Products = () => {
                       ? 'bg-gray-800/50 text-white' 
                       : currentTheme === 'eyeCare'
                       ? 'bg-[#E6D5BC] text-[#433422]'
-                      : 'bg-gray-100 text-gray-900'
+                      : 'bg-white/90 text-gray-900'
                     } border-0 ring-0 shadow-sm backdrop-blur-sm`}
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
-                  <option value="price-high">Price: High to Low</option>
-                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Sale Price: High to Low</option>
+                  <option value="price-low">Sale Price: Low to High</option>
+                  <option value="discount-high">Discount: High to Low</option>
                 </select>
                 <RiArrowDownSLine 
                   className={`absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none

@@ -1,22 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../../context/ThemeContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { RiArrowLeftLine } from 'react-icons/ri';
 import ShippingForm from './ShippingForm';
 import PaymentForm from './PaymentForm';
 import ReviewSection from './ReviewSection';
 import OrderSummary from './OrderSummary';
 import { useAuth } from '../../../context/AuthContext';
+import { toast } from 'react-hot-toast';
+import { formatCurrency } from '../../../utils/api';
+import { orderAPI } from '../../../utils/api';
 
-const CheckoutPage = ({ cartItems }) => {
+const CheckoutPage = () => {
   const { currentTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { items, subtotal, shipping, total, selectedItemIds } = location.state || {};
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const { userId } = useAuth();
+  const { user } = useAuth();
 
+  // Add new state for saved addresses
+  const [savedAddresses, setSavedAddresses] = useState([]);
+
+  // Load saved addresses when component mounts
+  useEffect(() => {
+    const loadSavedAddress = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await orderAPI.getSavedAddresses(token);
+        if (response.data.success && response.data.address) {
+          setSavedAddresses([response.data.address]); // Set only the latest address
+        }
+      } catch (error) {
+        console.error('Error loading saved address:', error);
+      }
+    };
+
+    loadSavedAddress();
+  }, []);
 
   useEffect(() => {
     // Hide body overflow when component mounts on mobile
@@ -40,6 +64,14 @@ const CheckoutPage = ({ cartItems }) => {
     };
   }, [isMobile]);
 
+  // Validate that we have selected items
+  useEffect(() => {
+    if (!items || items.length === 0) {
+      navigate(-1);
+      toast.error('Please select items to checkout');
+    }
+  }, [items]);
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -47,11 +79,8 @@ const CheckoutPage = ({ cartItems }) => {
     phone: '',
     address: '',
     city: '',
-    country: '',
     zipCode: '',
-    cardNumber: '',
-    expiryDate: '',
-    cvv: ''
+    paymentMethod: 'cod'
   });
 
   const steps = [
@@ -60,18 +89,46 @@ const CheckoutPage = ({ cartItems }) => {
     { number: 3, title: 'Review' }
   ];
 
-  // Calculate total for mobile summary
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const shipping = subtotal > 150 ? 0 : 12.00;
-  const total = subtotal + shipping;
-
-  const handleOrderSuccess = (orderData) => {
-    navigate(`/${userId}/checkout/confirmation`, { 
-      state: { 
-        order: orderData // Pass the complete order data
+  const handlePlaceOrder = async (orderData) => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('authToken');
+      
+      // Make sure all shipping address fields are included
+      const completeOrderData = {
+        ...orderData,
+        shippingAddress: {
+          firstName: orderData.firstName,
+          lastName: orderData.lastName,
+          email: orderData.email,
+          phone: orderData.phone,
+          address: orderData.address,
+          city: orderData.city,
+          zipCode: orderData.zipCode
+        }
+      };
+      
+      const response = await orderAPI.createOrder(completeOrderData, token);
+      
+      if (response.data.success) {
+        console.log('Order created:', response.data);
+        // Store the order ID in localStorage temporarily
+        localStorage.setItem('lastOrderId', response.data.orderId);
+        // Navigate to the order confirmation page with user ID
+        navigate(`/${user._id}/order-confirmation/${response.data.orderId}`);
       }
-    });
+    } catch (error) {
+      console.error('Error creating order:', error);
+      toast.error(error.response?.data?.message || 'Error creating order');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Fix the delivery price calculation
+  const deliveryPrice = 150; // Fixed delivery price
+  const totalBeforeDiscount = subtotal + deliveryPrice;
+  const finalAmount = totalBeforeDiscount;
 
   return (
     <div className={`${isMobile ? 'fixed inset-0 z-50' : 'min-h-screen'} ${
@@ -147,6 +204,7 @@ const CheckoutPage = ({ cartItems }) => {
                   onNext={() => setActiveStep(2)}
                   currentTheme={currentTheme}
                   isMobile={isMobile}
+                  savedAddresses={savedAddresses}
                 />
               )}
               {activeStep === 2 && (
@@ -162,20 +220,25 @@ const CheckoutPage = ({ cartItems }) => {
               {activeStep === 3 && (
                 <ReviewSection 
                   formData={formData}
-                  cartItems={cartItems}
+                  cartItems={items}
                   onBack={() => setActiveStep(2)}
                   loading={loading}
                   setLoading={setLoading}
                   currentTheme={currentTheme}
                   isMobile={isMobile}
-                  onOrderSuccess={handleOrderSuccess}
+                  onPlaceOrder={handlePlaceOrder}
                 />
               )}
             </div>
             
             {/* Desktop Order Summary */}
             <div className="hidden lg:block">
-              <OrderSummary cartItems={cartItems} currentTheme={currentTheme} />
+              <OrderSummary 
+                cartItems={items} 
+                subtotal={subtotal}
+                shipping={shipping}
+                total={total}
+              />
             </div>
           </div>
         </div>
@@ -197,10 +260,10 @@ const CheckoutPage = ({ cartItems }) => {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-baseline gap-2">
               <span className="text-sm opacity-70">Total:</span>
-              <span className="text-lg font-semibold">${total.toFixed(2)}</span>
+              <span className="text-lg font-semibold">{formatCurrency(finalAmount)}</span>
             </div>
             <div className="text-sm opacity-70">
-              {shipping === 0 ? 'Free Shipping' : `+$${shipping} Shipping`}
+              {`Delivery: ${formatCurrency(deliveryPrice)}`}
             </div>
           </div>
         </motion.div>

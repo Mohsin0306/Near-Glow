@@ -27,6 +27,7 @@ import {
   RiArrowDownSLine,
   RiMessage2Line,
   RiImageLine,
+  RiAdvertisementLine,
 } from 'react-icons/ri';
 import { notificationAPI } from '../../utils/api';
 import axios from 'axios';
@@ -57,7 +58,6 @@ const AdminSidebar = () => {
       icon: RiShoppingBag3Line,
       path: `/${user?._id}/admin/products`
     },
-
     {
       name: 'Customers',
       icon: RiUserLine,
@@ -68,7 +68,11 @@ const AdminSidebar = () => {
       icon: RiFileList3Line,
       path: `/${user?._id}/admin/orders`
     },
-
+    {
+      name: 'Campaigns',
+      icon: RiAdvertisementLine,
+      path: `/${user?._id}/admin/campaigns`
+    },
     {
       name: 'Notifications',
       icon: ({ className }) => (

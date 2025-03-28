@@ -65,12 +65,15 @@ const AdminBanner = () => {
 
     try {
       const formDataToSend = new FormData();
-      if (formData.title) formDataToSend.append('title', formData.title);
-      if (formData.description) formDataToSend.append('description', formData.description);
-      if (formData.buttonText) formDataToSend.append('buttonText', formData.buttonText);
-      if (formData.buttonLink) formDataToSend.append('buttonLink', formData.buttonLink);
-      formDataToSend.append('order', formData.order);
+      // Append media file with the correct field name
       formDataToSend.append('media', formData.media);
+      formDataToSend.append('order', formData.order);
+      
+      // Optional fields
+      if (formData.title.trim()) formDataToSend.append('title', formData.title);
+      if (formData.description.trim()) formDataToSend.append('description', formData.description);
+      if (formData.buttonText.trim()) formDataToSend.append('buttonText', formData.buttonText);
+      if (formData.buttonLink.trim()) formDataToSend.append('buttonLink', formData.buttonLink);
 
       await bannerAPI.createBanner(formDataToSend, token);
       toast.success('Banner created successfully');

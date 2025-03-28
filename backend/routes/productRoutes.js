@@ -10,10 +10,12 @@ const {
   deleteProduct,
   getProductsByCategory,
   searchProducts,
-  getSearchSuggestions
+  getSearchSuggestions,
+  getTrendingProducts
 } = require('../controllers/productController');
 
 // Specific routes first
+router.get('/trending', getTrendingProducts);
 router.get('/search', searchProducts);
 router.get('/suggestions', getSearchSuggestions);
 router.get('/category/:categoryId', getProductsByCategory);

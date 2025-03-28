@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { RiArrowRightLine, RiMapPinLine, RiPhoneLine, RiMailLine } from 'react-icons/ri';
+import { toast } from 'react-hot-toast';
 
-const ShippingForm = ({ formData, setFormData, onNext, currentTheme, isMobile }) => {
+const ShippingForm = ({ formData, setFormData, onNext, currentTheme, isMobile, savedAddresses }) => {
   const handleChange = (e) => {
     setFormData(prev => ({
       ...prev,
@@ -12,7 +13,29 @@ const ShippingForm = ({ formData, setFormData, onNext, currentTheme, isMobile })
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Validate all required fields
+    const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city'];
+    const missingFields = requiredFields.filter(field => !formData[field]);
+    
+    if (missingFields.length > 0) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    
     onNext();
+  };
+
+  const handleSavedAddressSelect = (address) => {
+    setFormData(prev => ({
+      ...prev,
+      firstName: address.firstName,
+      lastName: address.lastName,
+      email: address.email,
+      phone: address.phone,
+      address: address.address,
+      city: address.city
+    }));
   };
 
   const inputClass = `w-full px-4 py-3 rounded-xl border transition-all duration-200 ${
@@ -37,6 +60,28 @@ const ShippingForm = ({ formData, setFormData, onNext, currentTheme, isMobile })
       onSubmit={handleSubmit}
       className="space-y-4"
     >
+      {/* Saved Addresses Section */}
+      {savedAddresses && savedAddresses.length > 0 && (
+        <div className="mb-6">
+          <h3 className={`text-sm font-medium mb-2 ${labelClass}`}>Saved Address</h3>
+          <button
+            type="button"
+            onClick={() => handleSavedAddressSelect(savedAddresses[0])}
+            className={`w-full p-3 rounded-xl text-left transition-all ${
+              currentTheme === 'dark'
+                ? 'bg-gray-800 hover:bg-gray-700'
+                : currentTheme === 'eyeCare'
+                ? 'bg-[#E6D5B8] hover:bg-[#E6D5B8]/90'
+                : 'bg-gray-100 hover:bg-gray-200'
+            }`}
+          >
+            <div className="font-medium">{savedAddresses[0].firstName} {savedAddresses[0].lastName}</div>
+            <div className="text-sm opacity-75">{savedAddresses[0].address}, {savedAddresses[0].city}</div>
+            <div className="text-sm opacity-75">{savedAddresses[0].phone}</div>
+          </button>
+        </div>
+      )}
+
       {/* Name Row */}
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -132,19 +177,6 @@ const ShippingForm = ({ formData, setFormData, onNext, currentTheme, isMobile })
             onChange={handleChange}
             className={inputClass}
             placeholder="New York"
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="zipCode" className={labelClass}>ZIP Code</label>
-          <input
-            type="text"
-            id="zipCode"
-            name="zipCode"
-            value={formData.zipCode}
-            onChange={handleChange}
-            className={inputClass}
-            placeholder="10001"
             required
           />
         </div>

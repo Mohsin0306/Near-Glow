@@ -17,6 +17,7 @@ import { useTheme } from '../../../context/ThemeContext';
 import { toast } from 'react-hot-toast';
 import NotificationTabs from './NotificationTabs';
 import { useMediaQuery } from 'react-responsive';
+import socketService from '../../../services/socketService';
 
 const ReceivedNotifications = () => {
     const { token, isAuthenticated, user } = useAuth();
@@ -34,22 +35,45 @@ const ReceivedNotifications = () => {
     useEffect(() => {
         if (!isAuthenticated) {
             navigate('/login');
+            return;
         }
-        fetchNotifications();
-    }, [isAuthenticated, navigate, token]);
 
-    useEffect(() => {
-        const count = notifications.filter(notif => !notif.isRead).length;
-        setUnreadCount(count);
-    }, [notifications]);
+        // Initialize socket service for admin
+        socketService.connect(user.id, 'admin');
+
+        // Add notification listener
+        const unsubscribe = socketService.onNotification((newNotification) => {
+            console.log('New notification received:', newNotification);
+            setNotifications(prev => [newNotification, ...prev]);
+            setUnreadCount(prev => prev + 1);
+        });
+
+        // Fetch existing notifications
+        fetchNotifications();
+
+        // Cleanup
+        return () => {
+            unsubscribe();
+            socketService.disconnect();
+        };
+    }, [isAuthenticated, navigate, token, user]);
 
     const fetchNotifications = async () => {
         try {
-            const response = await notificationAPI.getUserNotifications(token);
+            const response = await notificationAPI.getAdminNotifications(token, {
+                page: 1,
+                limit: 20,
+                filter: 'all',
+                search: ''
+            });
+            
             if (response.data.success) {
                 setNotifications(response.data.notifications);
+                const unreadCount = response.data.notifications.filter(n => !n.isRead).length;
+                setUnreadCount(unreadCount);
             }
         } catch (error) {
+            console.error('Error fetching notifications:', error);
             toast.error('Failed to fetch notifications');
         } finally {
             setLoading(false);

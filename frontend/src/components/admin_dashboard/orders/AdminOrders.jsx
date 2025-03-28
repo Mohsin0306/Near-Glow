@@ -20,6 +20,7 @@ import {
   RiArrowDownLine
 } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
+import { Box, Typography } from '@mui/material';
 
 const formatDate = (date) => {
   return new Date(date).toLocaleDateString('en-US', {
@@ -305,6 +306,68 @@ const AdminOrders = () => {
     </div>
   );
 
+  const transformOrders = (orders) => {
+    return orders.map(order => ({
+      id: order._id,
+      orderId: order.orderId,
+      customer: `${order.shippingAddress?.firstName || 'N/A'} ${order.shippingAddress?.lastName || ''}`,
+      date: new Date(order.createdAt).toLocaleDateString(),
+      totalAmount: order.totalAmount || 0,
+      deliveryPrice: order.deliveryPrice || 0,
+      referralDiscount: order.referralDiscount || 0,
+      finalAmount: order.finalAmount || order.totalAmount || 0,
+      status: order.status,
+      paymentStatus: order.paymentDetails?.status || 'pending',
+      items: order.items,
+      shippingAddress: order.shippingAddress || {}
+    }));
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('ur-PK', {
+      style: 'currency',
+      currency: 'PKR',
+      minimumFractionDigits: 0
+    }).format(amount);
+  };
+
+  const renderOrderRow = (order) => {
+    // Add safe checks for shipping address
+    const shippingAddress = order.shippingAddress || {};
+    const customerName = `${shippingAddress.firstName || 'N/A'} ${shippingAddress.lastName || ''}`.trim();
+    const address = `${shippingAddress.address || 'N/A'}, ${shippingAddress.city || 'N/A'}`;
+
+    return (
+      <motion.tr
+        key={order._id}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className={`${styles.border} hover:bg-opacity-5 hover:bg-current`}
+      >
+        <td className="py-4 px-6">
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="font-medium">{order.orderId || 'N/A'}</div>
+              <div className="text-sm opacity-60">
+                {formatDate(order.createdAt)}
+              </div>
+            </div>
+          </div>
+        </td>
+        <td className="py-4 px-6">
+          <div className="flex items-center gap-3">
+            <RiUserLine size={20} className="opacity-50" />
+            <div>
+              <div className="font-medium">{customerName}</div>
+              <div className="text-sm opacity-60">{address}</div>
+            </div>
+          </div>
+        </td>
+        {/* ... rest of the row rendering ... */}
+      </motion.tr>
+    );
+  };
+
   return (
     <div className={`min-h-screen ${theme.background}`}>
       {/* Header Section - Added mt-16 for mobile to account for navbar */}
@@ -490,7 +553,37 @@ const AdminOrders = () => {
                               <div className="flex items-center gap-2">
                                 <RiMoneyDollarCircleLine className={theme.textSecondary} />
                                 <span className={`text-sm ${theme.text}`}>
-                                  Rs. {order.totalAmount.toLocaleString()}
+                                  {order.referralDiscount > 0 ? (
+                                    <Box sx={{ textAlign: 'right' }}>
+                                      <Typography 
+                                        variant="body2" 
+                                        sx={{ 
+                                          textDecoration: 'line-through',
+                                          color: 'text.secondary',
+                                          fontSize: '0.75rem'
+                                        }}
+                                      >
+                                        {formatCurrency(order.totalAmount)}
+                                      </Typography>
+                                      <Typography variant="body1">
+                                        {formatCurrency(order.finalAmount)}
+                                      </Typography>
+                                      <Typography variant="caption" sx={{ color: 'success.main' }}>
+                                        Discount: {formatCurrency(order.referralDiscount)}
+                                      </Typography>
+                                    </Box>
+                                  ) : (
+                                    <>
+                                      <Typography variant="body1">
+                                        {formatCurrency(order.totalAmount)}
+                                      </Typography>
+                                      {order.deliveryPrice > 0 && (
+                                        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                          + {formatCurrency(order.deliveryPrice)} delivery
+                                        </Typography>
+                                      )}
+                                    </>
+                                  )}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
@@ -549,7 +642,37 @@ const AdminOrders = () => {
                           <div className="flex items-center gap-2">
                             <RiMoneyDollarCircleLine className={theme.textSecondary} />
                             <span className={`text-sm ${theme.text}`}>
-                              Rs. {order.totalAmount.toLocaleString()}
+                              {order.referralDiscount > 0 ? (
+                                <Box sx={{ textAlign: 'right' }}>
+                                  <Typography 
+                                    variant="body2" 
+                                    sx={{ 
+                                      textDecoration: 'line-through',
+                                      color: 'text.secondary',
+                                      fontSize: '0.75rem'
+                                    }}
+                                  >
+                                    {formatCurrency(order.totalAmount)}
+                                  </Typography>
+                                  <Typography variant="body1">
+                                    {formatCurrency(order.finalAmount)}
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: 'success.main' }}>
+                                    Discount: {formatCurrency(order.referralDiscount)}
+                                  </Typography>
+                                </Box>
+                              ) : (
+                                <>
+                                  <Typography variant="body1">
+                                    {formatCurrency(order.totalAmount)}
+                                  </Typography>
+                                  {order.deliveryPrice > 0 && (
+                                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                      + {formatCurrency(order.deliveryPrice)} delivery
+                                    </Typography>
+                                  )}
+                                </>
+                              )}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">

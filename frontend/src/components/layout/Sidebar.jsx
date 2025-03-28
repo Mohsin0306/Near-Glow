@@ -17,7 +17,7 @@ import {
   RiEyeLine,
   RiNotificationLine,
   RiArrowDownSLine,
-  RiFlowerLine,
+  RiPlantFill,
   RiFireLine,
   RiDropFill,
   RiVipCrownLine,
@@ -45,7 +45,7 @@ import { adminProfileAPI } from '../../utils/api';
 
 // Create an icons mapping object
 const iconMapping = {
-  RiFlowerLine,
+  RiPlantFill,
   RiFireLine,
   RiDropFill,
   RiVipCrownLine,
@@ -172,7 +172,7 @@ const Sidebar = () => {
           // Map the categories to the format we need
           const mappedCategories = response.data.data.map(category => ({
             name: category.name,
-            icon: category.icon && iconMapping[category.icon] ? iconMapping[category.icon] : RiFlowerLine,
+            icon: category.icon && iconMapping[category.icon] ? iconMapping[category.icon] : RiPlantFill,
             path: `/categories/${category._id}`,
             description: category.description
           }));

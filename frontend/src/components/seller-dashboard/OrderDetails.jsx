@@ -240,12 +240,37 @@ const OrderDetails = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <RiMoneyDollarCircleLine className="w-4 h-4 text-gray-400" />
-                  <span className={`text-sm ${styles.text}`}>Total Amount</span>
+                  <span className={`text-sm ${styles.text}`}>Original Amount</span>
                 </div>
                 <span className={`text-sm font-medium ${styles.text}`}>
                   {formatPrice(order.totalAmount)}
                 </span>
               </div>
+              
+              {/* Add Referral Discount if used */}
+              {order.referralDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <RiMoneyDollarCircleLine className="w-4 h-4 text-green-400" />
+                    <span className={`text-sm ${styles.text}`}>Referral Discount</span>
+                  </div>
+                  <span className={`text-sm font-medium text-green-500`}>
+                    - {formatPrice(order.referralDiscount)}
+                  </span>
+                </div>
+              )}
+
+              {/* Final Amount */}
+              <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                <div className="flex items-center gap-2">
+                  <RiMoneyDollarCircleLine className="w-4 h-4 text-gray-400" />
+                  <span className={`text-sm font-bold ${styles.text}`}>Final Amount</span>
+                </div>
+                <span className={`text-sm font-bold ${styles.text}`}>
+                  {formatPrice(order.finalAmount || order.totalAmount)}
+                </span>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <RiCalendarEventLine className="w-4 h-4 text-gray-400" />

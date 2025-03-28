@@ -16,12 +16,39 @@ const cartItemSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  isSelected: {
+    type: Boolean,
+    default: true
+  },
+  selectedColor: {
+    type: {
+      name: String,
+      media: {
+        type: {
+          type: String,
+          enum: ['image', 'video'],
+          default: 'image'
+        },
+        public_id: String,
+        url: String,
+        thumbnail: String
+      }
+    },
+    default: undefined
+  },
   selectedOptions: {
-    // For any product-specific options (e.g., size, color)
-    type: Map,
-    of: String,
-    default: new Map()
+    type: Object,
+    default: {}
   }
+});
+
+// Add a pre-save middleware to ensure consistent handling of selectedColor
+cartItemSchema.pre('save', function(next) {
+  // If selectedColor is empty or has no name, set it to null
+  if (!this.selectedColor || !this.selectedColor.name) {
+    this.selectedColor = null;
+  }
+  next();
 });
 
 const cartSchema = new mongoose.Schema({
@@ -43,11 +70,13 @@ const cartSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Update total amount before saving
+// Update total amount before saving to only count selected items
 cartSchema.pre('save', async function(next) {
+  // Calculate total amount only from selected items
   this.totalAmount = this.items.reduce((total, item) => {
-    return total + (item.price * item.quantity);
+    return total + (item.isSelected ? item.price * item.quantity : 0);
   }, 0);
+  
   this.lastUpdated = Date.now();
   next();
 });

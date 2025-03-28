@@ -158,9 +158,10 @@ const Profile = () => {
         return;
       }
 
+      // Only send fields that are in the Seller model
       const updateData = {
-        name: formData.name,
         username: formData.username,
+        name: formData.name,
         email: formData.email,
         phoneNumber: formData.phoneNumber,
         bio: formData.bio,

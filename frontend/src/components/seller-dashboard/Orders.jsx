@@ -111,6 +111,8 @@ const Orders = () => {
             customer: `${order.shippingAddress.firstName} ${order.shippingAddress.lastName}`,
             date: order.createdAt,
             total: order.totalAmount,
+            finalAmount: order.finalAmount || order.totalAmount,
+            referralDiscount: order.referralDiscount || 0,
             status: order.status,
             items: order.items.map(item => ({
               ...item,
@@ -386,11 +388,24 @@ const Orders = () => {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className={`text-sm sm:text-base font-medium ${
-                        currentTheme === 'dark' ? 'text-gray-200' : 'text-gray-900'
-                      }`}>
-                        {formatPrice(order.total)}
-                      </p>
+                      {order.referralDiscount > 0 ? (
+                        <>
+                          <p className={`text-xs line-through text-gray-500`}>
+                            {formatPrice(order.total)}
+                          </p>
+                          <p className={`text-sm sm:text-base font-medium ${
+                            currentTheme === 'dark' ? 'text-gray-200' : 'text-gray-900'
+                          }`}>
+                            {formatPrice(order.finalAmount)}
+                          </p>
+                        </>
+                      ) : (
+                        <p className={`text-sm sm:text-base font-medium ${
+                          currentTheme === 'dark' ? 'text-gray-200' : 'text-gray-900'
+                        }`}>
+                          {formatPrice(order.total)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

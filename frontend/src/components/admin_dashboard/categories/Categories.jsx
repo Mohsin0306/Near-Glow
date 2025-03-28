@@ -108,7 +108,7 @@ const Categories = () => {
       // Append basic fields
       formData.append('name', newCategory.name);
       formData.append('description', newCategory.description);
-      formData.append('icon', newCategory.icon?.name || 'RiFlowerLine');
+      formData.append('icon', newCategory.icon);
       formData.append('color', newCategory.color || 'from-pink-400 to-rose-500');
       formData.append('bgPattern', newCategory.bgPattern || '');
       
@@ -144,14 +144,12 @@ const Categories = () => {
         return;
       }
 
-      console.log('Updating category:', updatedCategory); // Debug log
-
       const formData = new FormData();
       
       // Add basic fields
       formData.append('name', updatedCategory.name || '');
       formData.append('description', updatedCategory.description || '');
-      formData.append('icon', updatedCategory.icon?.name || '');
+      formData.append('icon', updatedCategory.icon);
       formData.append('color', updatedCategory.color || '');
       formData.append('bgPattern', updatedCategory.bgPattern || '');
       
@@ -166,11 +164,6 @@ const Categories = () => {
       // Handle image
       if (updatedCategory.image instanceof File) {
         formData.append('image', updatedCategory.image);
-      }
-
-      // Log FormData contents for debugging
-      for (let pair of formData.entries()) {
-        console.log(pair[0] + ': ' + pair[1]);
       }
 
       const response = await api.put(
@@ -191,8 +184,6 @@ const Categories = () => {
         );
         setEditingCategory(null);
         toast.success('Category updated successfully');
-      } else {
-        toast.error(response.data.message || 'Failed to update category');
       }
     } catch (error) {
       console.error('Update error:', error);

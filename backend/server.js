@@ -12,42 +12,37 @@ const PushSubscription = require('./models/PushSubscription');
 const auth = require('./middleware/auth');
 const recentRoutes = require('./routes/RecentRoutes');
 const bannerRoutes = require('./routes/bannerRoutes');
+const referralRoutes = require('./routes/referralRoutes');
+const campaignRoutes = require('./routes/campaignRoutes');
 
 const app = express();
 const server = http.createServer(app);
 
-// CORS configuration with specific options
+// CORS configuration
 app.use(cors({
-  origin: function(origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://192.168.100.17:3000',
-      'http://192.168.100.17:5000'
-    ];
-    
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+  origin: ['http://localhost:3000', 'http://192.168.100.17:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 // Create uploads directory if it doesn't exist
-const uploadDir = path.join(__dirname, 'tmp', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const uploadsDir = path.join(__dirname, 'tmp', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Created uploads directory:', uploadsDir);
 }
 
 // Connect to MongoDB
 connectDB();
 
 // Initialize Socket.IO
-initializeSocket(server);
+const io = initializeSocket(server, ['http://localhost:3000', 'http://192.168.100.17:3000']);
 
 // Configure web-push
 webpush.setVapidDetails(
@@ -112,21 +107,25 @@ app.use('/api/recent', recentRoutes);
 // Add banner routes
 app.use('/api/banners', bannerRoutes);
 
+// Add referral routes
+app.use('/api/referral', referralRoutes);
+
+// Add campaign routes
+app.use('/api/campaigns', campaignRoutes);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server Error:', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method
-  });
-
-  // Send appropriate error response
-  res.status(err.status || 500).json({
+  console.error('Server error:', err);
+  res.status(500).json({
     success: false,
-    message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    message: 'Internal server error',
+    error: err.message
   });
+});
+
+// Add a health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 // Basic route with status code
@@ -139,19 +138,9 @@ app.get('/', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-const IP_ADDRESS = process.env.IP_ADDRESS || '0.0.0.0';
 
-server.listen(PORT, IP_ADDRESS, () => {
-  console.log(`Server is running on:`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on port ${PORT}`);
   console.log(`- Local: http://localhost:${PORT}`);
-  console.log(`- Network: http://${IP_ADDRESS}:${PORT}`);
-  
-  const networkInterfaces = require('os').networkInterfaces();
-  Object.keys(networkInterfaces).forEach((interfaceName) => {
-    networkInterfaces[interfaceName].forEach((interface) => {
-      if (interface.family === 'IPv4' && !interface.internal) {
-        console.log(`- Network: http://${interface.address}:${PORT}`);
-      }
-    });
-  });
+  console.log(`- Network: http://${process.env.IP_ADDRESS || 'localhost'}:${PORT}`);
 });

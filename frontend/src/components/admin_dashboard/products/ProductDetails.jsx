@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RiEditLine, RiArrowLeftLine, RiLoader4Line, RiStore2Line, RiPriceTag3Line, RiCheckboxCircleLine, RiMoneyDollarCircleLine, RiSaveLine, RiCloseLine, RiZoomInLine, RiArrowLeftSLine, RiArrowRightSLine, RiPlayCircleLine, RiPauseCircleLine } from 'react-icons/ri';
+import { RiEditLine, RiArrowLeftLine, RiLoader4Line, RiStore2Line, RiPriceTag3Line, RiCheckboxCircleLine, RiMoneyDollarCircleLine, RiSaveLine, RiCloseLine, RiZoomInLine, RiArrowLeftSLine, RiArrowRightSLine, RiPlayCircleLine, RiPauseCircleLine, RiTruckLine } from 'react-icons/ri';
 import { useTheme } from '../../../context/ThemeContext';
 import { createAPI } from '../../../utils/api';
 import { toast } from 'react-hot-toast';
@@ -33,6 +33,8 @@ const ProductDetails = () => {
   const videoRef = useRef(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [mediaState, setMediaState] = useState([]);
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [selectedColorImages, setSelectedColorImages] = useState([]);
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => {
@@ -91,6 +93,24 @@ const ProductDetails = () => {
     }
   }, [mediaState]);
 
+  useEffect(() => {
+    if (product?.colors?.length > 0) {
+      const initialColor = product.colors[0];
+      setSelectedColor(initialColor);
+      
+      if (initialColor.media?.length > 0) {
+        const mainProductMedia = product.media.filter(item => 
+          !product.colors.some(c => 
+            c.media?.some(m => m.url === item.url)
+          )
+        );
+        
+        product.media = [...initialColor.media, ...mainProductMedia];
+        setSelectedMedia(0);
+      }
+    }
+  }, [product]);
+
   const token = localStorage.getItem('authToken');
   const api = createAPI(token);
 
@@ -126,7 +146,9 @@ const ProductDetails = () => {
       // Add basic product details
       formData.append('name', editedProduct.name);
       formData.append('description', editedProduct.description);
-      formData.append('price', Number(editedProduct.price));
+      formData.append('marketPrice', Number(editedProduct.marketPrice));
+      formData.append('salePrice', Number(editedProduct.salePrice));
+      formData.append('deliveryPrice', Number(editedProduct.deliveryPrice));
       formData.append('stock', Number(editedProduct.stock));
       formData.append('brand', editedProduct.brand);
       formData.append('category', editedProduct.category._id || editedProduct.category);
@@ -270,6 +292,32 @@ const ProductDetails = () => {
   useEffect(() => {
     handleVideoInteraction();
   }, [isPlaying]);
+
+  const handleColorSelect = (color) => {
+    setSelectedColor(color);
+    
+    // Create a combined media array with main product images and color variant images
+    const allMedia = [...(product?.media || [])];
+    
+    // If color has media, add it to the beginning of the array
+    if (color.media && color.media.length > 0) {
+      // Filter out any existing color images from the main media array
+      const mainProductMedia = allMedia.filter(item => 
+        !product?.colors?.some(c => 
+          c.media?.some(m => m.url === item.url)
+        )
+      );
+      
+      // Combine color media with main product media
+      const combinedMedia = [...color.media, ...mainProductMedia];
+      
+      // Update the product's media array temporarily
+      product.media = combinedMedia;
+      
+      // Set the first image of the color as selected
+      setSelectedMedia(0);
+    }
+  };
 
   const renderMedia = () => {
     const currentMedia = product?.media?.[selectedMedia];
@@ -756,15 +804,11 @@ const ProductDetails = () => {
                 </motion.button>
               </div>
 
-              {/* Thumbnails - Modified for mobile */}
-              {product?.media?.length > 1 && (
+              {/* Thumbnails - Only show on desktop */}
+              {!isMobile && product?.media?.length > 1 && (
                 <div className="relative px-1">
-                  <div className={`overflow-x-auto ${
-                    isMobile 
-                      ? '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]' 
-                      : 'scrollbar-thin'
-                  }`}>
-                    <div className={`flex gap-3 ${isMobile ? 'py-4' : 'py-2'} px-0.5`}>
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <div className="flex gap-3 py-2 px-0.5">
                       {product.media.map((item, index) => (
                         <motion.button
                           key={index}
@@ -773,9 +817,7 @@ const ProductDetails = () => {
                             setSelectedMedia(index);
                             setIsPlaying(false);
                           }}
-                          className={`relative flex-shrink-0 ${
-                            isMobile ? 'w-16 h-16' : 'w-20 h-20'
-                          } rounded-xl overflow-hidden group
+                          className={`relative flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden group
                             transition-all duration-200 ${
                             selectedMedia === index 
                               ? `ring-2 ${
@@ -973,7 +1015,7 @@ const ProductDetails = () => {
                     </div>
                   </div>
 
-                  {/* Category Info */}
+                  {/* Price Info */}
                   <div className={`p-4 rounded-xl ${
                     currentTheme === 'dark' ? 'bg-gray-700/50' 
                     : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
@@ -985,7 +1027,7 @@ const ProductDetails = () => {
                         : currentTheme === 'eyeCare' ? 'bg-[#433422]'
                         : 'bg-black'
                       }`}>
-                        <RiPriceTag3Line className="w-5 h-5 text-white" />
+                        <RiMoneyDollarCircleLine className="w-5 h-5 text-white" />
                       </span>
                       <div>
                         <p className={`text-sm font-medium ${
@@ -993,14 +1035,61 @@ const ProductDetails = () => {
                           : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
                           : 'text-gray-600'
                         }`}>
-                          Category
+                          Price
+                        </p>
+                        <div className="flex items-baseline gap-2">
+                          <p className={`text-base font-semibold ${
+                            currentTheme === 'dark' ? 'text-white' 
+                            : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                            : 'text-gray-900'
+                          }`}>
+                            RS {product?.salePrice?.toLocaleString()}
+                          </p>
+                          {product?.marketPrice > product?.salePrice && (
+                            <p className={`text-sm line-through ${
+                              currentTheme === 'dark' ? 'text-gray-400' 
+                              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                              : 'text-gray-500'
+                            }`}>
+                              RS {product?.marketPrice?.toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delivery Info */}
+                  <div className={`p-4 rounded-xl ${
+                    currentTheme === 'dark' ? 'bg-gray-700/50' 
+                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
+                    : 'bg-gray-50'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`p-2 rounded-lg ${
+                        currentTheme === 'dark' ? 'bg-gray-600' 
+                        : currentTheme === 'eyeCare' ? 'bg-[#433422]'
+                        : 'bg-black'
+                      }`}>
+                        <RiTruckLine className="w-5 h-5 text-white" />
+                      </span>
+                      <div>
+                        <p className={`text-sm font-medium ${
+                          currentTheme === 'dark' ? 'text-gray-300' 
+                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                          : 'text-gray-600'
+                        }`}>
+                          Delivery
                         </p>
                         <p className={`text-base font-semibold ${
                           currentTheme === 'dark' ? 'text-white' 
                           : currentTheme === 'eyeCare' ? 'text-[#433422]'
                           : 'text-gray-900'
                         }`}>
-                          {product?.category?.name}
+                          {product?.deliveryPrice > 0 
+                            ? `RS ${product.deliveryPrice.toLocaleString()}`
+                            : 'Free Delivery'
+                          }
                         </p>
                       </div>
                     </div>
@@ -1031,40 +1120,7 @@ const ProductDetails = () => {
                         <p className={`text-base font-semibold ${
                           product?.stock > 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {product?.stock > 0 ? 'In Stock' : 'Out of Stock'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Price Range */}
-                  <div className={`p-4 rounded-xl ${
-                    currentTheme === 'dark' ? 'bg-gray-700/50' 
-                    : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                    : 'bg-gray-50'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`p-2 rounded-lg ${
-                        currentTheme === 'dark' ? 'bg-gray-600' 
-                        : currentTheme === 'eyeCare' ? 'bg-[#433422]'
-                        : 'bg-black'
-                      }`}>
-                        <RiMoneyDollarCircleLine className="w-5 h-5 text-white" />
-                      </span>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          currentTheme === 'dark' ? 'text-gray-300' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Price
-                        </p>
-                        <p className={`text-base font-semibold ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          RS {product?.price.toLocaleString()}
+                          {product?.stock > 0 ? `${product.stock} in stock` : 'Out of Stock'}
                         </p>
                       </div>
                     </div>
@@ -1076,278 +1132,136 @@ const ProductDetails = () => {
             {/* Mobile Product Details Section */}
             {isMobile && (
               <div className="space-y-4">
-                {/* Enhanced Name and Basic Info Card */}
-                <div className={`p-4 rounded-xl ${
-                  currentTheme === 'dark' ? 'bg-gray-800' 
-                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                  : 'bg-white'
-                } shadow-sm`}>
-                  {isEditing ? (
-                    <div className="space-y-4">
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${
-                          currentTheme === 'dark' ? 'text-gray-300' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Product Name
-                        </label>
-                        <input
-                          type="text"
-                          value={editedProduct?.name}
-                          onChange={(e) => handleInputChange('name', e.target.value)}
-                          className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                            ${currentTheme === 'dark'
-                              ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                              : currentTheme === 'eyeCare'
-                              ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                              : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                            } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                        />
-                      </div>
-
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${
-                          currentTheme === 'dark' ? 'text-gray-300' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          Brand
-                        </label>
-                        <input
-                          type="text"
-                          value={editedProduct?.brand}
-                          onChange={(e) => handleInputChange('brand', e.target.value)}
-                          className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                            ${currentTheme === 'dark'
-                              ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                              : currentTheme === 'eyeCare'
-                              ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                              : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                            } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Product Title and Category */}
-                      <div className="space-y-3 mb-4">
-                        <h1 className={`text-xl font-bold ${
-                          currentTheme === 'dark' ? 'text-white' 
-                          : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                          : 'text-gray-900'
-                        }`}>
-                          {product?.name}
-                        </h1>
-                        <div className={`flex items-center gap-2 ${
-                          currentTheme === 'dark' ? 'text-gray-400' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          <div className="flex items-center gap-1.5">
-                            <RiStore2Line className="w-4 h-4" />
-                            <span className="text-sm">{product?.brand}</span>
-                          </div>
-                          <span>•</span>
-                          <div className="flex items-center gap-1.5">
-                            <RiPriceTag3Line className="w-4 h-4" />
-                            <span className="text-sm">{product?.category?.name}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Price and Stock - Fixed to one row */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Price */}
-                        <div className={`p-3 rounded-lg ${
-                          currentTheme === 'dark' ? 'bg-gray-700/50' 
-                          : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                          : 'bg-gray-50'
-                        }`}>
-                          <p className={`text-xs mb-1 ${
-                            currentTheme === 'dark' ? 'text-gray-400' 
-                            : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                            : 'text-gray-500'
-                          }`}>
-                            Price
-                          </p>
-                          <div className="flex items-baseline gap-1">
-                            <span className={`text-lg font-bold ${
-                              currentTheme === 'dark' ? 'text-white' 
-                              : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                              : 'text-gray-900'
-                            }`}>
-                              RS {product?.price.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Stock Status */}
-                        <div className={`p-3 rounded-lg ${
-                          currentTheme === 'dark' ? 'bg-gray-700/50' 
-                          : currentTheme === 'eyeCare' ? 'bg-[#E6D5B8]/30'
-                          : 'bg-gray-50'
-                        }`}>
-                          <p className={`text-xs mb-1 ${
-                            currentTheme === 'dark' ? 'text-gray-400' 
-                            : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                            : 'text-gray-500'
-                          }`}>
-                            Availability
-                          </p>
-                          <div className={`flex items-center gap-1.5 ${
-                            product?.stock > 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {product?.stock > 0 ? (
-                              <>
-                                <RiCheckboxCircleLine className="w-4 h-4" />
-                                <span className="text-sm font-medium">{product.stock} in stock</span>
-                              </>
-                            ) : (
-                              <>
-                                <RiCloseLine className="w-4 h-4" />
-                                <span className="text-sm font-medium">Out of stock</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Description */}
-                      <div className="mt-4">
-                        <p className={`text-sm leading-relaxed ${
-                          currentTheme === 'dark' ? 'text-gray-300' 
-                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                          : 'text-gray-600'
-                        }`}>
-                          {product?.description}
-                        </p>
-                      </div>
-                    </>
-                  )}
+                {/* 1. Media Gallery */}
+                <div className="relative">
+                  {/* ... existing media gallery code ... */}
                 </div>
 
-                {/* Specifications */}
-                <div className="mb-6">
-                  <h3 className={`text-lg font-semibold mb-4 ${
-                    currentTheme === 'dark' ? 'text-white' 
-                    : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                    : 'text-gray-900'
-                  }`}>
+                {/* 2. Price Section - Moved up */}
+                <div className="px-4 py-2">
+                  <div className="flex items-start justify-between">
+                    {/* Left side - Price */}
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-xl font-bold ${currentTheme === 'dark' ? 'text-white' : currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-gray-900'}`}>
+                        RS {product?.salePrice?.toLocaleString()}
+                      </span>
+                      {product?.marketPrice > product?.salePrice && (
+                        <span className={`text-sm line-through ${currentTheme === 'dark' ? 'text-gray-400' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60' : 'text-gray-500'}`}>
+                          RS {product?.marketPrice?.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Right side - Delivery & Stock */}
+                    <div className="text-right">
+                      <div className={`text-xs ${currentTheme === 'dark' ? 'text-gray-400' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60' : 'text-gray-500'}`}>
+                        {product?.deliveryPrice > 0 
+                          ? `Delivery: RS ${product.deliveryPrice.toLocaleString()}`
+                          : 'Free Delivery'
+                        }
+                      </div>
+                      <div className={`text-xs mt-0.5 ${product?.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {product?.stock > 0 ? `${product.stock} in stock` : 'Out of Stock'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Title - After price */}
+                <div className="px-4">
+                  <h1 className={`text-xl font-bold mb-1 ${currentTheme === 'dark' ? 'text-white' : currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-gray-900'}`}>
+                    {product?.name}
+                  </h1>
+                  <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-500'}`}>
+                    {product?.category?.name} • {product?.brand}
+                  </p>
+                </div>
+
+                {/* 4. Colors Section */}
+                {product?.colors && product.colors.length > 0 && (
+                  <div className="px-4 py-2">
+                    <div className="space-y-2">
+                      {/* Color Label and Selected Color */}
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-white' : currentTheme === 'eyeCare' ? 'text-[#433422]' : 'text-gray-900'}`}>
+                          Color:
+                        </span>
+                        <span className={`text-sm ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-600'}`}>
+                          {selectedColor?.name || product.colors[0].name}
+                        </span>
+                      </div>
+
+                      {/* Color Swatches */}
+                      <div className="flex flex-wrap gap-2">
+                        {product.colors.map((color, index) => (
+                          <button
+                            key={index}
+                            onClick={() => handleColorSelect(color)}
+                            className={`group relative p-0.5 ${
+                              selectedColor?.name === color.name 
+                                ? 'ring-2 ring-blue-500 rounded-lg'
+                                : ''
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-0.5">
+                              <div
+                                className={`w-10 h-10 rounded-lg border ${
+                                  color.name.toLowerCase() === 'white' 
+                                    ? 'border-gray-300' 
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: color.name.toLowerCase() }}
+                              />
+                              <span className={`text-xs ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-600'}`}>
+                                {color.name}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Description */}
+                <div className="px-4">
+                  <p className={`text-sm leading-relaxed ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-600'}`}>
+                    {product?.description}
+                  </p>
+                </div>
+
+                {/* Specifications - Mobile */}
+                <div className="px-4 pt-4 border-t">
+                  <h3 className={`text-base font-semibold mb-3 ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-900'}`}>
                     Specifications
                   </h3>
-                  {isEditing ? (
-                    <div className="space-y-4">
-                      {editedProduct?.specifications.map((spec, index) => (
-                        <div key={index} className="grid grid-cols-2 gap-4">
-                          <input
-                            value={spec.key}
-                            onChange={(e) => handleSpecificationChange(index, 'key', e.target.value)}
-                            className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                              ${currentTheme === 'dark'
-                                ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                                : currentTheme === 'eyeCare'
-                                ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                                : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                              } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                            placeholder="Key"
-                          />
-                          <input
-                            value={spec.value}
-                            onChange={(e) => handleSpecificationChange(index, 'value', e.target.value)}
-                            className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                              ${currentTheme === 'dark'
-                                ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                                : currentTheme === 'eyeCare'
-                                ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                                : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                              } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                            placeholder="Value"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className={`p-6 rounded-2xl ${
-                      currentTheme === 'dark' ? 'bg-gray-800' 
-                      : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                      : 'bg-white'
-                    } shadow-lg`}>
-                      <div className="grid grid-cols-1 gap-4">
-                        {product?.specifications.map((spec, index) => (
-                          <div key={index} className="space-y-1">
-                            <dt className={`text-sm font-medium ${
-                              currentTheme === 'dark' ? 'text-gray-400' 
-                              : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                              : 'text-gray-500'
-                            }`}>
-                              {spec.key}
-                            </dt>
-                            <dd className={`text-base break-words ${
-                              currentTheme === 'dark' ? 'text-white' 
-                              : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                              : 'text-gray-900'
-                            }`}>
-                              {spec.value}
-                            </dd>
-                          </div>
-                        ))}
+                  <div className="space-y-3">
+                    {product?.specifications?.map((spec, index) => (
+                      <div key={index} className="space-y-1">
+                        <dt className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-gray-400' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-500'}`}>
+                          {spec.key}
+                        </dt>
+                        <dd className={`text-sm ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-900'}`}>
+                          {spec.value}
+                        </dd>
                       </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
 
-                {/* Features */}
-                <div>
-                  <h3 className={`text-lg font-semibold mb-4 ${
-                    currentTheme === 'dark' ? 'text-white' 
-                    : currentTheme === 'eyeCare' ? 'text-[#433422]'
-                    : 'text-gray-900'
-                  }`}>
+                {/* Features - Mobile */}
+                <div className="px-4 pt-4 border-t">
+                  <h3 className={`text-base font-semibold mb-3 ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-900'}`}>
                     Features
                   </h3>
-                  {isEditing ? (
-                    <div className="space-y-4">
-                      {editedProduct?.features.map((feature, index) => (
-                        <input
-                          key={index}
-                          value={feature}
-                          onChange={(e) => handleFeatureChange(index, e.target.value)}
-                          className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                            ${currentTheme === 'dark'
-                                ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                                : currentTheme === 'eyeCare'
-                                ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                                : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                              } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                          placeholder={`Feature ${index + 1}`}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className={`p-6 rounded-2xl ${
-                      currentTheme === 'dark' ? 'bg-gray-800' 
-                      : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
-                      : 'bg-white'
-                    } shadow-lg`}>
-                      <ul className="space-y-3">
-                        {product?.features.map((feature, index) => (
-                          <li key={index} className={`flex items-start gap-3 ${
-                            currentTheme === 'dark' ? 'text-gray-300' 
-                            : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                            : 'text-gray-600'
-                          }`}>
-                            <span className={`flex-shrink-0 mt-1 ${
-                              currentTheme === 'eyeCare' 
-                                ? 'text-[#433422]' 
-                                : 'text-blue-500'
-                            }`}>•</span>
-                            <span className="text-base leading-relaxed">{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <ul className="space-y-2">
+                    {product?.features?.map((feature, index) => (
+                      <li key={index} className={`flex items-start gap-2 text-sm ${currentTheme === 'dark' ? 'text-gray-300' : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]' : 'text-gray-600'}`}>
+                        <span className="mt-1">•</span>
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             )}
@@ -1361,7 +1275,7 @@ const ProductDetails = () => {
                 : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
                 : 'bg-white'
               } shadow-lg`}>
-                {/* Title and Category */}
+                {/* 1. Title Section */}
                 <div className="mb-6">
                   {isEditing ? (
                     <div className="space-y-4">
@@ -1427,140 +1341,145 @@ const ProductDetails = () => {
                   </p>
                 </div>
 
-                {/* Price and Stock */}
-                {isEditing ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        currentTheme === 'dark' ? 'text-gray-300' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-600'
+                {/* 2. Price Section - Moved after title */}
+                <div className={`p-6 rounded-2xl ${
+                  currentTheme === 'dark' ? 'bg-gray-800' 
+                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+                  : 'bg-white'
+                } shadow-lg`}>
+                  <div className="space-y-3">
+                    {/* Price */}
+                    <div className="flex items-baseline gap-3">
+                      <span className={`text-3xl font-bold ${
+                        currentTheme === 'dark' ? 'text-white' 
+                        : currentTheme === 'eyeCare' ? 'text-[#433422]'
+                        : 'text-gray-900'
                       }`}>
-                        Price (RS)
-                      </label>
-                      <input
-                        type="number"
-                        value={editedProduct?.price}
-                        onChange={(e) => handleInputChange('price', e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                          ${currentTheme === 'dark'
-                            ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                            : currentTheme === 'eyeCare'
-                            ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                            : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                          } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                        />
+                        RS {product?.salePrice?.toLocaleString()}
+                      </span>
+                      {product?.marketPrice > product?.salePrice && (
+                        <span className={`text-xl line-through ${
+                          currentTheme === 'dark' ? 'text-gray-400' 
+                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                          : 'text-gray-500'
+                        }`}>
+                          RS {product?.marketPrice?.toLocaleString()}
+                        </span>
+                      )}
                     </div>
-                    <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        currentTheme === 'dark' ? 'text-gray-300' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-600'
-                      }`}>
-                        Stock
-                      </label>
-                      <input
-                        type="number"
-                        value={editedProduct?.stock}
-                        onChange={(e) => handleInputChange('stock', e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                          ${currentTheme === 'dark'
-                            ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                            : currentTheme === 'eyeCare'
-                            ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                            : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                          } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                        />
+                    
+                    {/* Delivery Price */}
+                    <div className={`text-base ${
+                      currentTheme === 'dark' ? 'text-gray-400' 
+                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]/60'
+                      : 'text-gray-500'
+                    }`}>
+                      {product?.deliveryPrice > 0 
+                        ? `Delivery: RS ${product.deliveryPrice.toLocaleString()}`
+                        : 'Free Delivery'
+                      }
+                    </div>
+
+                    {/* Stock Status */}
+                    <div className={`text-base ${product?.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {product?.stock > 0 ? (
+                        <>
+                          In Stock
+                          {product.stock <= 5 && (
+                            <span className="ml-2 text-red-600">
+                              Only {product.stock} left!
+                            </span>
+                          )}
+                        </>
+                      ) : 'Out of Stock'}
                     </div>
                   </div>
-                ) : (
-                  <>
-                    <div className="space-y-1">
-                      <p className={`text-sm font-medium ${
-                        currentTheme === 'dark' ? 'text-gray-400' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-500'
-                      }`}>
-                        Price
-                      </p>
-                      <div className="flex items-baseline gap-2">
-                        <span className={`text-3xl sm:text-4xl font-bold tracking-tight ${
+                </div>
+
+                {/* 3. Colors Section */}
+                {product?.colors && product.colors.length > 0 && (
+                  <div className={`p-6 rounded-2xl ${
+                    currentTheme === 'dark' ? 'bg-gray-800' 
+                    : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+                    : 'bg-white'
+                  } shadow-lg`}>
+                    <div className="flex flex-col space-y-3">
+                      {/* Color Label and Selected Color */}
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium ${
                           currentTheme === 'dark' ? 'text-white' 
                           : currentTheme === 'eyeCare' ? 'text-[#433422]'
                           : 'text-gray-900'
                         }`}>
-                          RS {product?.price.toLocaleString()}
+                          Color:
+                        </span>
+                        <span className={`${
+                          currentTheme === 'dark' ? 'text-gray-300' 
+                          : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                          : 'text-gray-600'
+                        }`}>
+                          {selectedColor?.name || product.colors[0].name}
                         </span>
                       </div>
-                    </div>
 
-                    <div className="space-y-1 mb-6">
-                      <p className={`text-sm font-medium ${
-                        currentTheme === 'dark' ? 'text-gray-400' 
-                        : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                        : 'text-gray-500'
-                      }`}>
-                        Availability
-                      </p>
-                      <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                        product?.stock > 0 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {product?.stock > 0 ? (
-                          <>
-                            <span className="w-2 h-2 rounded-full bg-green-600 mr-2"></span>
-                            {product.stock} in stock
-                          </>
-                        ) : (
-                          <>
-                            <span className="w-2 h-2 rounded-full bg-red-600 mr-2"></span>
-                            Out of stock
-                          </>
-                        )}
+                      {/* Color Swatches */}
+                      <div className="flex flex-wrap gap-3">
+                        {product.colors.map((color, index) => (
+                          <button
+                            key={index}
+                            onClick={() => handleColorSelect(color)}
+                            className={`group relative rounded-lg p-1 ${
+                              selectedColor?.name === color.name 
+                                ? 'ring-2 ring-blue-500'
+                                : 'hover:ring-2 hover:ring-gray-300'
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-1">
+                              <div
+                                className={`w-12 h-12 rounded-lg border-2 ${
+                                  color.name.toLowerCase() === 'white' 
+                                    ? 'border-gray-300' 
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: color.name.toLowerCase() }}
+                              />
+                              <span className={`text-xs ${
+                                currentTheme === 'dark' ? 'text-gray-300' 
+                                : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                                : 'text-gray-600'
+                              }`}>
+                                {color.name}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
 
-                {/* Description */}
-                {isEditing ? (
-                  <div className="mb-6">
-                    <label className={`block text-sm font-medium mb-2 ${
-                      currentTheme === 'dark' ? 'text-gray-300' 
-                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                      : 'text-gray-600'
-                    }`}>
-                      Description
-                    </label>
-                    <textarea
-                      value={editedProduct?.description}
-                      onChange={(e) => handleInputChange('description', e.target.value)}
-                      rows={4}
-                      className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                        ${currentTheme === 'dark'
-                          ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
-                          : currentTheme === 'eyeCare'
-                          ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
-                          : 'bg-white border-gray-200 text-gray-900 focus:border-black'
-                        } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                    />
-                  </div>
-                ) : (
-                  <div className="border-t border-b py-6 mb-6 border-opacity-10 border-current">
-                    <p className={`text-base sm:text-lg leading-relaxed ${
-                      currentTheme === 'dark' ? 'text-gray-300' 
-                      : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
-                      : 'text-gray-600'
-                    }`}>
-                      {product?.description}
-                    </p>
-                  </div>
-                )}
+                {/* 4. Description */}
+                <div className={`p-6 rounded-2xl ${
+                  currentTheme === 'dark' ? 'bg-gray-800' 
+                  : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+                  : 'bg-white'
+                } shadow-lg`}>
+                  <p className={`text-base leading-relaxed ${
+                    currentTheme === 'dark' ? 'text-gray-300' 
+                    : currentTheme === 'eyeCare' ? 'text-[#6B5D4D]'
+                    : 'text-gray-600'
+                  }`}>
+                    {product?.description}
+                  </p>
+                </div>
               </div>
 
               {/* Specifications */}
-              <div className="mb-6">
+              <div className={`p-6 rounded-2xl ${
+                currentTheme === 'dark' ? 'bg-gray-800' 
+                : currentTheme === 'eyeCare' ? 'bg-[#FFF8ED]'
+                : 'bg-white'
+              } shadow-lg`}>
                 <h3 className={`text-lg font-semibold mb-4 ${
                   currentTheme === 'dark' ? 'text-white' 
                   : currentTheme === 'eyeCare' ? 'text-[#433422]'
@@ -1582,22 +1501,22 @@ const ProductDetails = () => {
                                 ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
                                 : 'bg-white border-gray-200 text-gray-900 focus:border-black'
                               } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                          placeholder="Key"
-                        />
-                        <input
-                          value={spec.value}
-                          onChange={(e) => handleSpecificationChange(index, 'value', e.target.value)}
-                          className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
-                            ${currentTheme === 'dark'
+                            placeholder="Key"
+                          />
+                          <input
+                            value={spec.value}
+                            onChange={(e) => handleSpecificationChange(index, 'value', e.target.value)}
+                            className={`w-full px-4 py-3 rounded-xl border transition-all duration-200
+                              ${currentTheme === 'dark'
                                 ? 'bg-gray-700 border-gray-600 text-white focus:border-blue-500'
                                 : currentTheme === 'eyeCare'
                                 ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
                                 : 'bg-white border-gray-200 text-gray-900 focus:border-black'
                               } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                          placeholder="Value"
-                        />
-                      </div>
-                    ))}
+                            placeholder="Value"
+                          />
+                        </div>
+                      ))}
                   </div>
                 ) : (
                   <div className={`p-6 rounded-2xl ${
@@ -1652,9 +1571,9 @@ const ProductDetails = () => {
                             ? 'bg-white border-[#E6D5B8] text-[#433422] focus:border-[#433422]'
                             : 'bg-white border-gray-200 text-gray-900 focus:border-black'
                           } focus:ring-2 focus:ring-opacity-50 focus:outline-none`}
-                        placeholder={`Feature ${index + 1}`}
-                      />
-                    ))}
+                          placeholder={`Feature ${index + 1}`}
+                        />
+                      ))}
                   </div>
                 ) : (
                   <div className={`p-6 rounded-2xl ${

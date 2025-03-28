@@ -53,18 +53,65 @@ const notifyFollowers = async (product, type, title, message, data = {}) => {
 
 exports.createProduct = async (req, res) => {
   try {
+    console.log('Files received:', req.files);
+    console.log('Body received:', req.body);
     const {
       name,
       description,
-      price,
+      marketPrice,
+      salePrice,
+      deliveryPrice,
       category,
       brand,
       stock,
       status,
       specifications,
-      features
+      features,
+      colors
     } = req.body;
 
+    // Set price to salePrice to satisfy schema requirement
+    const price = salePrice;
+
+    let media = [];
+    let colorVariants = [];
+    
+    // Handle main product images/videos
+    if (req.files && req.files.images) {
+      const imageUploadPromises = req.files.images.map(file => 
+        uploadToCloudinary(file, false)
+      );
+      const uploadedImages = await Promise.all(imageUploadPromises);
+      media = [...media, ...uploadedImages];
+    }
+
+    // Handle color variant images
+    if (colors) {
+      const parsedColors = JSON.parse(colors);
+      
+      for (const color of parsedColors) {
+        const colorFieldName = `colorImage_${color.name}`;
+        if (req.files && req.files[colorFieldName]) {
+          const colorImagePromises = req.files[colorFieldName].map(file =>
+            uploadToCloudinary(file, false)
+          );
+          const uploadedColorImages = await Promise.all(colorImagePromises);
+          
+          colorVariants.push({
+            name: color.name,
+            media: uploadedColorImages
+          });
+        } else {
+          // If no images uploaded for this color, still add the color
+          colorVariants.push({
+            name: color.name,
+            media: []
+          });
+        }
+      }
+    }
+
+    // Parse subcategories
     let subcategories = [];
     if (req.body.subcategories) {
       try {
@@ -74,31 +121,14 @@ exports.createProduct = async (req, res) => {
       }
     }
 
-    let media = [];
-    
-    // Handle image uploads
-    if (req.files && req.files.images) {
-      const imageUploadPromises = req.files.images.map(file => 
-        uploadToCloudinary(file, false)
-      );
-      const uploadedImages = await Promise.all(imageUploadPromises);
-      media = [...media, ...uploadedImages];
-    }
-
-    // Handle video upload
-    if (req.files && req.files.videos) {
-      const videoUploadPromises = req.files.videos.map(file => 
-        uploadToCloudinary(file, true)
-      );
-      const uploadedVideos = await Promise.all(videoUploadPromises);
-      media = [...media, ...uploadedVideos];
-    }
-
-    // Create product with provided status
+    // Create product with both price structures
     const product = await Product.create({
       name,
       description,
-      price,
+      price: parseFloat(price), // Add this for schema compatibility
+      marketPrice: parseFloat(marketPrice),
+      salePrice: parseFloat(salePrice),
+      deliveryPrice: parseFloat(deliveryPrice || 0),
       category,
       subcategories,
       brand,
@@ -107,6 +137,7 @@ exports.createProduct = async (req, res) => {
       specifications: JSON.parse(specifications || '[]'),
       features: JSON.parse(features || '[]'),
       media,
+      colors: colorVariants,
       seller: req.user.id
     });
 
@@ -125,6 +156,7 @@ exports.createProduct = async (req, res) => {
       product
     });
   } catch (error) {
+    console.error('Create product error:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating product',
@@ -143,6 +175,16 @@ exports.updateProduct = async (req, res) => {
         success: false,
         message: 'Product not found'
       });
+    }
+
+    // Validate prices if they're being updated
+    if (req.body.marketPrice && req.body.salePrice) {
+      if (parseFloat(req.body.salePrice) > parseFloat(req.body.marketPrice)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sale price cannot be greater than market price'
+        });
+      }
     }
 
     // Check for price decrease only
@@ -186,8 +228,9 @@ exports.updateProduct = async (req, res) => {
 
     // Initialize media array with existing media from the product
     let media = [...product.media];
+    let colorVariants = [...(product.colors || [])];
 
-    // Handle removed media
+    // Handle removed media for main product
     if (req.body.removedMedia) {
       try {
         const removedMediaIds = JSON.parse(req.body.removedMedia);
@@ -199,6 +242,27 @@ exports.updateProduct = async (req, res) => {
         }
       } catch (error) {
         console.error('Error processing removedMedia:', error);
+      }
+    }
+
+    // Handle removed color variant media
+    if (req.body.removedColorMedia) {
+      try {
+        const removedColorMedia = JSON.parse(req.body.removedColorMedia);
+        for (const item of removedColorMedia) {
+          const colorIndex = colorVariants.findIndex(c => c.name === item.colorName);
+          if (colorIndex !== -1) {
+            colorVariants[colorIndex].media = colorVariants[colorIndex].media.filter(
+              m => !item.mediaIds.includes(m.public_id)
+            );
+            // Delete from cloudinary
+            for (const publicId of item.mediaIds) {
+              await deleteFromCloudinary(publicId);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error processing removedColorMedia:', error);
       }
     }
 
@@ -221,22 +285,52 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    // Update product with clean data
+    // Handle new color variants and their media
+    if (req.body.colors) {
+      const parsedColors = JSON.parse(req.body.colors);
+      
+      for (const color of parsedColors) {
+        let existingColorIndex = colorVariants.findIndex(c => c.name === color.name);
+        
+        if (req.files && req.files[`color_${color.name}`]) {
+          const colorImagePromises = req.files[`color_${color.name}`].map(file =>
+            uploadToCloudinary(file, false)
+          );
+          const uploadedColorImages = await Promise.all(colorImagePromises);
+          
+          if (existingColorIndex !== -1) {
+            colorVariants[existingColorIndex].media.push(...uploadedColorImages);
+          } else {
+            colorVariants.push({
+              name: color.name,
+              media: uploadedColorImages
+            });
+          }
+        }
+      }
+    }
+
+    // Update product with new price fields
+    const updateData = {
+      name: req.body.name,
+      description: req.body.description,
+      marketPrice: req.body.marketPrice ? parseFloat(req.body.marketPrice) : product.marketPrice,
+      salePrice: req.body.salePrice ? parseFloat(req.body.salePrice) : product.salePrice,
+      deliveryPrice: req.body.deliveryPrice ? parseFloat(req.body.deliveryPrice) : product.deliveryPrice,
+      category: req.body.category,
+      brand: req.body.brand,
+      stock: req.body.stock,
+      status: req.body.status || product.status,
+      specifications: JSON.parse(req.body.specifications || '[]'),
+      features: JSON.parse(req.body.features || '[]'),
+      subcategories,
+      media,
+      colors: colorVariants,
+    };
+
     const updatedProduct = await Product.findByIdAndUpdate(
       productId,
-      {
-        name: req.body.name,
-        description: req.body.description,
-        price: req.body.price,
-        category: req.body.category,
-        brand: req.body.brand,
-        stock: req.body.stock,
-        status: req.body.status || product.status, // Keep existing status if not provided
-        specifications: JSON.parse(req.body.specifications || '[]'),
-        features: JSON.parse(req.body.features || '[]'),
-        subcategories,
-        media
-      },
+      updateData,
       { new: true, runValidators: true }
     ).populate('category');
 
@@ -475,78 +569,61 @@ exports.getSearchSuggestions = async (req, res) => {
   try {
     const { q: query } = req.query;
     
-    if (!query || query.length < 1) {
-      // Get popular searches (based on most viewed and ordered products)
-      const popularProducts = await Product.aggregate([
-        { $match: { status: 'published' } },
-        {
-          $addFields: {
-            popularity: { $add: ['$orderCount', '$viewCount'] }
-          }
-        },
-        { $sort: { popularity: -1 } },
-        { $limit: 8 },
-        {
-          $project: {
-            _id: 0,
-            name: 1,
-            brand: 1
-          }
-        }
-      ]);
-
+    if (!query || query.length < 2) {
       return res.json({
         success: true,
-        suggestions: [],
-        popularSearches: popularProducts.map(p => p.name)
+        suggestions: []
       });
     }
 
-    // Real-time search suggestions
-    const suggestions = await Product.aggregate([
-      {
-        $match: {
-          status: 'published',
-          $or: [
-            { name: { $regex: query, $options: 'i' } },
-            { brand: { $regex: query, $options: 'i' } },
-            { description: { $regex: query, $options: 'i' } }
-          ]
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          names: { $addToSet: '$name' },
-          brands: { $addToSet: '$brand' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          suggestions: {
-            $concatArrays: ['$names', '$brands']
-          }
-        }
-      }
-    ]);
-
-    // Get unique suggestions and limit to 8
-    const uniqueSuggestions = [...new Set(
-      suggestions[0]?.suggestions || []
-    )].slice(0, 8);
+    // Find products matching the query
+    const products = await Product.find({
+      status: 'published',
+      name: { $regex: query, $options: 'i' }
+    })
+    .select('name brand')
+    .limit(5);
+    
+    // Extract unique suggestions from product names and brands
+    const suggestions = [...new Set([
+      ...products.map(p => p.name),
+      ...products.map(p => p.brand)
+    ])].slice(0, 8);
 
     res.json({
       success: true,
-      suggestions: uniqueSuggestions,
-      popularSearches: []
+      suggestions
     });
-
   } catch (error) {
-    console.error('Suggestions error:', error);
+    console.error('Error getting search suggestions:', error);
+    res.json({
+      success: true,
+      suggestions: []
+    });
+  }
+};
+
+exports.getTrendingProducts = async (req, res) => {
+  try {
+    // Get trending products based on view count and recent views
+    const trendingProducts = await Product.find({ 
+      status: 'published',
+      stock: { $gt: 0 }
+    })
+    .sort({ viewCount: -1, lastViewedAt: -1 })
+    .limit(10)
+    .populate('category', 'name')
+    .populate('seller', 'name');
+
+    res.json({
+      success: true,
+      products: trendingProducts
+    });
+  } catch (error) {
+    console.error('Error fetching trending products:', error);
     res.status(500).json({
       success: false,
-      message: 'Error getting suggestions',
+      message: 'Error fetching trending products',
       error: error.message
     });
   }
